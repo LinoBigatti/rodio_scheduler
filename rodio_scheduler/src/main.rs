@@ -2,9 +2,13 @@ use std::fs::File;
 use std::io::BufReader;
 use rodio::{Decoder, OutputStream, source::Source};
 
-use rodio_scheduler::Scheduler;
+use rodio_scheduler::{Scheduler, PlaybackEvent};
+
+use time_graph;
 
 fn main() {
+    time_graph::enable_data_collection(true);
+
     // Get an output stream handle to the default physical sound device.
     // Note that no sound will be played if _stream is dropped
     let (_stream, stream_handle) = OutputStream::try_default().unwrap();
@@ -22,13 +26,25 @@ fn main() {
     let note_hit_decoder_source = Decoder::new(note_hit).unwrap().buffered();
 
     let mut scheduler = Scheduler::new(metronome_decoder_source, 48000, 2);
-    scheduler.add_source(note_hit_decoder_source);
+    let note_hit_id = scheduler.add_source(note_hit_decoder_source);
+
+    for i in 0..800 {
+        let event = PlaybackEvent { 
+            source_id: note_hit_id,
+            timestamp: i as u128 * 48000 as u128,
+            repeat: None,
+        };
+
+        scheduler.schedule_event(event);
+    }
     
     // Play the sound directly on the device
     stream_handle.play_raw(scheduler);
 
     // The sound plays in a separate audio thread,
     // so we need to keep the main thread alive while it's playing.
-    std::thread::sleep(std::time::Duration::from_secs(50));
+    std::thread::sleep(std::time::Duration::from_secs(5));
+
+    println!("{}", time_graph::get_full_graph().as_dot());
 }
 
