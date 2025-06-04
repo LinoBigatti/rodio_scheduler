@@ -13,38 +13,50 @@ use intmap::IntMap;
 pub struct PlaybackEvent {
     pub source_id: usize,
     pub timestamp: u128,
-    pub repeat: Option<u128>,
+    pub repeat: Option<(u128, u128)>,
 }
 
-pub struct Scheduler<I1, I2, D> 
+pub struct Scheduler<I, D> 
 where
-    I1: Source,
-    I1::Item: Sample,
-    I2: Source + Clone,
-    I2::Item: Sample,
-    D: FromSample<I1::Item> + FromSample<I2::Item> + Sample,
+    I: Source,
+    I::Item: Sample,
+    D: FromSample<I::Item> + Sample,
 {
-    input: UniformSourceIterator<I1, D>,
-    sources: Vec<UniformSourceIterator<I2, D>>,
+    input: UniformSourceIterator<I, D>,
+    sources: Vec<Vec<D>>,
     playback_schedule: IntMap<u128, D>,
     samples_counted: u128,
 }
 
-impl<I1, I2, D> Scheduler<I1, I2, D>
+impl<I, D> Scheduler<I, D>
 where
-    I1: Source,
-    I1::Item: Sample,
-    I2: Source + Clone,
-    I2::Item: Sample,
-    D: FromSample<I1::Item> + FromSample<I2::Item> + Sample,
+    //I1: Source,
+    //I1::Item: Sample,
+    //I2: Source + Clone,
+    //I2::Item: Sample,
+    //D: FromSample<I1::Item> + FromSample<I2::Item> + Sample,
+    I: Source,
+    I::Item: Sample,
+    D: FromSample<I::Item> + Sample,
 {
     /// Creates a new source inside of which sounds can be scheduled.
     #[inline]
-    pub fn new(input: I1, sample_rate: u32, channels: u16) -> Scheduler<I1, I2, D> {
+    pub fn new(input: I, sample_rate: u32, channels: u16) -> Scheduler<I, D> {
         Scheduler {
             input: UniformSourceIterator::new(input, channels, sample_rate),
             sources: Vec::with_capacity(10),
-            playback_schedule: IntMap::with_capacity(8000 * 48000 * 2), 
+            playback_schedule: IntMap::new(), 
+            samples_counted: 0,
+        }
+    }
+
+    /// Creates a new source inside of which sounds can be scheduled, with a given capacity.
+    #[inline]
+    pub fn with_capacity(input: I, sample_rate: u32, channels: u16, capacity: usize) -> Scheduler<I, D> {
+        Scheduler {
+            input: UniformSourceIterator::new(input, channels, sample_rate),
+            sources: Vec::with_capacity(10),
+            playback_schedule: IntMap::with_capacity(capacity as usize * sample_rate as usize), 
             samples_counted: 0,
         }
     }
@@ -52,8 +64,15 @@ where
     /// Adds a new Source.
     #[inline]
     #[instrument]
-    pub fn add_source(&mut self, source: I2) -> usize {
-        self.sources.push(UniformSourceIterator::new(source, self.channels(), self.sample_rate()));
+    pub fn add_source<I2>(&mut self, source: I2) -> usize 
+    where
+        I2: Source,
+        I2::Item: Sample,
+        D: FromSample<I2::Item>,
+    {
+        let buffered_source: Vec<D> = UniformSourceIterator::new(source, 1, self.sample_rate()).collect();
+
+        self.sources.push(buffered_source);
 
         self.sources.len() - 1
     }
@@ -64,47 +83,33 @@ where
     pub fn schedule_event(&mut self, event: PlaybackEvent) {
         let Some(original_source) = self.sources.get(event.source_id) else { return };
 
-        let mut source = original_source.clone();
-        
-        //let event_frames = source
-                              //.enumerate()
-                              //.map(|(i, sample)| (event.timestamp + i as u128, sample))
-                              //.map(|(sample_i, sample)| {
-                                //let new_sample = match self.playback_schedule.get(sample_i) {
-                                    //Some(s) => s.saturating_add(sample),
-                                    //None => sample,
-                                //};
+        let mut i: u128 = 0;
+        for sample in original_source.iter() {
+            let sample_i = event.timestamp + i;
 
-                                //(sample_i, new_sample)
-                              //})
-                              //.collect::<Vec<_>>()
-                              //.into_iter();
-
-        //self.playback_schedule.extend(event_frames); 
-        let mut sample_iter: Option<D> = source.next();
-        
-        let mut i = 0;
-        while let Some(sample) = sample_iter {
-            let sample_i = event.timestamp + i as u128;
-
-            match self.playback_schedule.entry(sample_i) {
-                intmap::Entry::Occupied(mut entry) => entry.insert(entry.get().saturating_add(sample)),
-                intmap::Entry::Vacant(mut entry) => *entry.insert(sample),
+            match event.repeat {
+                Some((samples_per_cycle, cycles)) => for j in 0..cycles {
+                    match self.playback_schedule.entry(sample_i + j * samples_per_cycle) {
+                        intmap::Entry::Occupied(mut entry) => _ = entry.insert(entry.get().saturating_add(*sample)),
+                        intmap::Entry::Vacant(entry) => _ = entry.insert(*sample),
+                    };
+                },
+                None => match self.playback_schedule.entry(sample_i) {
+                    intmap::Entry::Occupied(mut entry) => _ = entry.insert(entry.get().saturating_add(*sample)),
+                    intmap::Entry::Vacant(entry) => _ = entry.insert(*sample),
+                },
             };
 
-            sample_iter = source.next();
             i += 1;
         } 
     }
 }
 
-impl<I1, I2, D> Iterator for Scheduler<I1, I2, D>
+impl<I, D> Iterator for Scheduler<I, D>
 where
-    I1: Source,
-    I1::Item: Sample,
-    I2: Source + Clone,
-    I2::Item: Sample,
-    D: FromSample<I1::Item> + FromSample<I2::Item> + Sample,
+    I: Source,
+    I::Item: Sample,
+    D: FromSample<I::Item> + Sample,
 {
     type Item = D;
 
@@ -149,13 +154,11 @@ where
     }
 }
 
-impl<I1, I2, D> Source for Scheduler<I1, I2, D>
+impl<I, D> Source for Scheduler<I, D>
 where
-    I1: Source,
-    I1::Item: Sample,
-    I2: Source + Clone,
-    I2::Item: Sample,
-    D: FromSample<I1::Item> + FromSample<I2::Item> + Sample,
+    I: Source,
+    I::Item: Sample,
+    D: FromSample<I::Item> + Sample,
 {
     #[inline]
     fn current_frame_len(&self) -> Option<usize> {

@@ -25,7 +25,8 @@ fn main() {
     // Decode that sound file into a source
     let note_hit_decoder_source = Decoder::new(note_hit).unwrap().buffered();
 
-    let mut scheduler = Scheduler::new(metronome_decoder_source, 48000, 2);
+    //let mut scheduler = Scheduler::new(metronome_decoder_source, 48000, 2);
+    let mut scheduler = Scheduler::with_capacity(metronome_decoder_source, 48000, 2, 800);
     let note_hit_id = scheduler.add_source(note_hit_decoder_source);
 
     for i in 0..800 {
@@ -37,6 +38,8 @@ fn main() {
 
         scheduler.schedule_event(event);
     }
+
+    println!("Scheduled");
     
     // Play the sound directly on the device
     stream_handle.play_raw(scheduler);
