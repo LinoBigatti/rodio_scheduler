@@ -1,7 +1,9 @@
 use std::time::Duration;
-use std::iter::Peekable;
 
-use rodio::source::{Source, TrackPosition, UniformSourceIterator, SeekError};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+use rodio::source::{Source, UniformSourceIterator, SeekError};
 use rodio::Sample;
 
 use rodio::cpal::FromSample;
@@ -12,8 +14,8 @@ use intmap::IntMap;
 
 pub struct PlaybackEvent {
     pub source_id: usize,
-    pub timestamp: u128,
-    pub repeat: Option<(u128, u128)>,
+    pub timestamp: u64,
+    pub repeat: Option<(u64, u64)>,
 }
 
 pub struct Scheduler<I, D> 
@@ -24,8 +26,10 @@ where
 {
     input: UniformSourceIterator<I, D>,
     sources: Vec<Vec<D>>,
-    playback_schedule: IntMap<u128, D>,
-    samples_counted: u128,
+    playback_schedule: IntMap<u64, D>,
+    sample_counter: Arc<AtomicU64>,
+    samples_counted: u64,
+    channels_counted: u16,
 }
 
 impl<I, D> Scheduler<I, D>
@@ -41,23 +45,27 @@ where
 {
     /// Creates a new source inside of which sounds can be scheduled.
     #[inline]
-    pub fn new(input: I, sample_rate: u32, channels: u16) -> Scheduler<I, D> {
+    pub fn new(input: I, sample_counter: Arc<AtomicU64>, sample_rate: u32, channels: u16) -> Scheduler<I, D> {
         Scheduler {
             input: UniformSourceIterator::new(input, channels, sample_rate),
             sources: Vec::with_capacity(10),
             playback_schedule: IntMap::new(), 
+            sample_counter: sample_counter,
             samples_counted: 0,
+            channels_counted: 0,
         }
     }
 
     /// Creates a new source inside of which sounds can be scheduled, with a given capacity.
     #[inline]
-    pub fn with_capacity(input: I, sample_rate: u32, channels: u16, capacity: usize) -> Scheduler<I, D> {
+    pub fn with_capacity(input: I, sample_counter: Arc<AtomicU64>, sample_rate: u32, channels: u16, capacity: usize) -> Scheduler<I, D> {
         Scheduler {
             input: UniformSourceIterator::new(input, channels, sample_rate),
             sources: Vec::with_capacity(10),
             playback_schedule: IntMap::with_capacity(capacity as usize * sample_rate as usize), 
+            sample_counter: sample_counter,
             samples_counted: 0,
+            channels_counted: 0,
         }
     }
 
@@ -83,7 +91,7 @@ where
     pub fn schedule_event(&mut self, event: PlaybackEvent) {
         let Some(original_source) = self.sources.get(event.source_id) else { return };
 
-        let mut i: u128 = 0;
+        let mut i: u64 = 0;
         for sample in original_source.iter() {
             let sample_i = event.timestamp + i;
 
@@ -116,16 +124,20 @@ where
     #[inline]
     #[instrument]
     fn next(&mut self) -> Option<D> {
-        //if self.samples_counted % (48000 * 2) == 0 {
-            //self.playing_queue.push(self.sources[0].clone().peekable());
-        //}
+        let current_samples = self.samples_counted;
 
-        let real_samples = self.samples_counted; // / self.channels() as u128;
-        self.samples_counted += 1;
+        if self.channels_counted == self.channels() {
+            self.samples_counted += 1;
+            self.channels_counted = 0;
+
+            self.sample_counter.store(self.samples_counted, Ordering::SeqCst);
+        } else {
+            self.channels_counted += 1;
+        }
 
         let input_sample = self.input.next();
 
-        let scheduled_sample = self.playback_schedule.get(real_samples);
+        let scheduled_sample = self.playback_schedule.get(current_samples);
 
         match (input_sample, scheduled_sample) {
             (Some(s1), Some(s2)) => Some(s1.saturating_add(*s2)),
@@ -134,18 +146,6 @@ where
             (None, Some(s2)) => Some(*s2),
             (None, None) => None,
         }
-
-        //self.playing_queue
-          //.iter_mut()
-          //.map(|event| {
-            //if real_samples < event.timestamp {
-                //return None
-            //}
-            
-            //event.source.next()
-          //})
-          //.fold(input_sample, |accumulator_sample, new_sample| {
-        //})
     }
 
     #[inline]

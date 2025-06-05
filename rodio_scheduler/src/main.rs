@@ -1,5 +1,9 @@
 use std::fs::File;
 use std::io::BufReader;
+
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use rodio::{Decoder, OutputStream, source::Source};
 
 use rodio_scheduler::{Scheduler, PlaybackEvent};
@@ -26,13 +30,14 @@ fn main() {
     let note_hit_decoder_source = Decoder::new(note_hit).unwrap().buffered();
 
     //let mut scheduler = Scheduler::new(metronome_decoder_source, 48000, 2);
-    let mut scheduler = Scheduler::with_capacity(metronome_decoder_source, 48000, 2, 800);
+    let sample_counter = Arc::new(AtomicU64::new(0));
+    let mut scheduler = Scheduler::with_capacity(metronome_decoder_source, sample_counter.clone(), 48000, 2, 800);
     let note_hit_id = scheduler.add_source(note_hit_decoder_source);
 
     for i in 0..800 {
         let event = PlaybackEvent { 
             source_id: note_hit_id,
-            timestamp: i as u128 * 48000 as u128,
+            timestamp: i as u64 * 48000,
             repeat: None,
         };
 
@@ -46,7 +51,17 @@ fn main() {
 
     // The sound plays in a separate audio thread,
     // so we need to keep the main thread alive while it's playing.
-    std::thread::sleep(std::time::Duration::from_secs(5));
+    //std::thread::sleep(std::time::Duration::from_secs(5));
+    let mut last = 0;
+    while true {
+        let val = sample_counter.load(Ordering::SeqCst);
+
+        if val != last {
+            last = val;
+
+            println!("{}", val);
+        }
+    }
 
     println!("{}", time_graph::get_full_graph().as_dot());
 }
