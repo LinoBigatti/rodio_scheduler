@@ -3,14 +3,16 @@ use std::time::Duration;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use ahash::{AHasher, RandomState};
+use std::collections::HashMap;
+use std::collections::hash_map::Entry;
+
 use rodio::source::{Source, UniformSourceIterator, SeekError};
 use rodio::Sample;
 
 use rodio::cpal::FromSample;
 
 use time_graph::instrument;
-
-use intmap::IntMap;
 
 pub struct PlaybackEvent {
     pub source_id: usize,
@@ -26,7 +28,7 @@ where
 {
     input: UniformSourceIterator<I, D>,
     sources: Vec<Vec<D>>,
-    playback_schedule: IntMap<u64, D>,
+    playback_schedule: HashMap<u64, D, RandomState>,
     sample_counter: Arc<AtomicU64>,
     samples_counted: u64,
     channels_counted: u16,
@@ -49,7 +51,7 @@ where
         Scheduler {
             input: UniformSourceIterator::new(input, channels, sample_rate),
             sources: Vec::with_capacity(10),
-            playback_schedule: IntMap::new(), 
+            playback_schedule: HashMap::default(), 
             sample_counter: sample_counter,
             samples_counted: 0,
             channels_counted: 0,
@@ -62,7 +64,7 @@ where
         Scheduler {
             input: UniformSourceIterator::new(input, channels, sample_rate),
             sources: Vec::with_capacity(10),
-            playback_schedule: IntMap::with_capacity(capacity as usize * sample_rate as usize), 
+            playback_schedule: HashMap::default(), 
             sample_counter: sample_counter,
             samples_counted: 0,
             channels_counted: 0,
@@ -98,13 +100,13 @@ where
             match event.repeat {
                 Some((samples_per_cycle, cycles)) => for j in 0..cycles {
                     match self.playback_schedule.entry(sample_i + j * samples_per_cycle) {
-                        intmap::Entry::Occupied(mut entry) => _ = entry.insert(entry.get().saturating_add(*sample)),
-                        intmap::Entry::Vacant(entry) => _ = entry.insert(*sample),
+                        Entry::Occupied(mut entry) => _ = entry.insert(entry.get().saturating_add(*sample)),
+                        Entry::Vacant(entry) => _ = entry.insert(*sample),
                     };
                 },
                 None => match self.playback_schedule.entry(sample_i) {
-                    intmap::Entry::Occupied(mut entry) => _ = entry.insert(entry.get().saturating_add(*sample)),
-                    intmap::Entry::Vacant(entry) => _ = entry.insert(*sample),
+                    Entry::Occupied(mut entry) => _ = entry.insert(entry.get().saturating_add(*sample)),
+                    Entry::Vacant(entry) => _ = entry.insert(*sample),
                 },
             };
 
@@ -124,8 +126,11 @@ where
     #[inline]
     #[instrument]
     fn next(&mut self) -> Option<D> {
-        let current_samples = self.samples_counted;
+        let input_sample = self.input.next();
 
+        let scheduled_sample = self.playback_schedule.get(&self.samples_counted);
+
+        // Set the sample and channel index for the next sample
         if self.channels_counted == self.channels() {
             self.samples_counted += 1;
             self.channels_counted = 0;
@@ -135,10 +140,7 @@ where
             self.channels_counted += 1;
         }
 
-        let input_sample = self.input.next();
-
-        let scheduled_sample = self.playback_schedule.get(current_samples);
-
+        // Mix scheduled and input samples
         match (input_sample, scheduled_sample) {
             (Some(s1), Some(s2)) => Some(s1.saturating_add(*s2)),
             (Some(s1), None) => Some(s1),
