@@ -2,9 +2,9 @@ use std::fs::File;
 use std::io::BufReader;
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64};
 
-use rodio::{Decoder, OutputStream, source::Source};
+use rodio::{Decoder, OutputStream};
 
 use rodio_scheduler::{Scheduler, PlaybackEvent};
 
@@ -27,29 +27,29 @@ fn main() {
     let note_hit = BufReader::new(File::open("assets/note_hit.wav").unwrap());
 
     // Decode that sound file into a source
-    let note_hit_decoder_source = Decoder::new(note_hit).unwrap().buffered();
+    let note_hit_decoder_source = Decoder::new(note_hit).unwrap();
 
     println!("Scheduling...");
     
     //let mut scheduler = Scheduler::new(metronome_decoder_source, 48000, 2);
     let sample_counter = Arc::new(AtomicU64::new(0));
     let mut scheduler = Scheduler::with_capacity(metronome_decoder_source, sample_counter.clone(), 48000, 2, 800);
-    let note_hit_id = scheduler.add_source(note_hit_decoder_source);
+    let note_hit_id = scheduler.schedule_source(note_hit_decoder_source);
 
     for i in 0..8000 {
         let event = PlaybackEvent { 
             source_id: note_hit_id,
-            timestamp: i as u64 * 48000,
+            timestamp: i as u64 * 48000 / 2,
             repeat: None,
         };
 
-        scheduler.schedule_event(event);
+        scheduler.get_scheduler(note_hit_id).unwrap().schedule_event(event);
     }
 
     println!("Scheduled");
     
     // Play the sound directly on the device
-    stream_handle.play_raw(scheduler);
+    let _ = stream_handle.play_raw(scheduler);
 
     // The sound plays in a separate audio thread,
     // so we need to keep the main thread alive while it's playing.
