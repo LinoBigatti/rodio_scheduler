@@ -4,6 +4,7 @@
 use time_graph::instrument;
 
 mod simd;
+mod simd_iter;
 //mod simd_macros;
 
 use std::time::Duration;
@@ -100,10 +101,7 @@ where
             }
         }
 
-        let playing_samples = simd::retrieve_samples(&self.source, &self.playback_schedule, self.playback_position, self.samples_counted);
-
-        // Mix scheduled and input samples
-        simd::simd_mix_samples(playing_samples.as_slice(), None)
+        simd::retrieve_and_mix_samples(&self.source, &self.playback_schedule, self.playback_position, self.samples_counted)
     }
 
     #[inline]
