@@ -8,9 +8,11 @@ use rodio::{Decoder, OutputStream};
 
 use rodio_scheduler::{Scheduler, PlaybackEvent};
 
+#[cfg(feature = "profiler")]
 use time_graph;
 
 fn main() {
+    #[cfg(feature = "profiler")]
     time_graph::enable_data_collection(true);
 
     // Get an output stream handle to the default physical sound device.
@@ -65,6 +67,8 @@ fn main() {
         //}
     //}
 
+
+    #[cfg(feature = "profiler")]
     println!("{}", time_graph::get_full_graph().as_dot());
 }
 

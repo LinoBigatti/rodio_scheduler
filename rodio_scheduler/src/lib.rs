@@ -1,18 +1,23 @@
+#![feature(portable_simd)]
+
+#[cfg(feature="profiler")]
+use time_graph::instrument;
+
+mod simd;
+//mod simd_macros;
+
 use std::time::Duration;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use std::default::Default;
+use std::simd::SimdElement;
 
 use rodio::source::{Source, UniformSourceIterator, SeekError};
 use rodio::Sample;
 
 use rodio::cpal::FromSample;
-
-use time_graph::instrument;
-
-mod simd;
 
 pub struct PlaybackEvent {
     pub source_id: usize,
@@ -24,7 +29,7 @@ pub struct SingleSourceScheduler<I, D>
 where
     I: Source,
     I::Item: Sample,
-    D: FromSample<I::Item> + Sample + Default,
+    D: FromSample<I::Item> + Sample + Default + SimdElement,
 {
     source: Vec<D>,
     channels: u16,
@@ -41,7 +46,7 @@ impl<I, D> SingleSourceScheduler<I, D>
 where
     I: Source,
     I::Item: Sample,
-    D: FromSample<I::Item> + Sample + Default,
+    D: FromSample<I::Item> + Sample + Default + SimdElement,
 {
     /// Creates a new source inside of which sounds can be scheduled.
     #[inline]
@@ -69,12 +74,12 @@ impl<I, D> Iterator for SingleSourceScheduler<I, D>
 where
     I: Source,
     I::Item: Sample,
-    D: FromSample<I::Item> + Sample + Default,
+    D: FromSample<I::Item> + Sample + Default + SimdElement,
 {
     type Item = D;
 
     #[inline]
-    #[instrument]
+    #[cfg_attr(feature = "profiler", instrument(name = "SingleSourceScheduler::next"))]
     fn next(&mut self) -> Option<D> {
         // Set the sample and channel index for the next sample
         self.samples_counted += 1;
@@ -95,15 +100,14 @@ where
             }
         }
 
-        let playing_queue: &mut [u64] = &mut self.playback_schedule[self.playback_position.0..self.playback_position.1];
-        let playing_samples = simd::simd_retrieve_samples(&self.source, self.samples_counted, playing_queue);
+        let playing_samples = simd::retrieve_samples(&self.source, &self.playback_schedule, self.playback_position, self.samples_counted);
 
         // Mix scheduled and input samples
         simd::simd_mix_samples(playing_samples.as_slice(), None)
     }
 
     #[inline]
-    #[instrument]
+    #[cfg_attr(feature = "profiler", instrument(name = "SingleSourceScheduler::size_hint"))]
     fn size_hint(&self) -> (usize, Option<usize>) {
         let last_element: usize = self.playback_schedule[self.playback_schedule.len() - 1].try_into().unwrap_or_else(|_| usize::MAX);
         let lower_bound = last_element + self.source.len();
@@ -116,7 +120,7 @@ impl<I, D> Source for SingleSourceScheduler<I, D>
 where
     I: Source,
     I::Item: Sample,
-    D: FromSample<I::Item> + Sample + Default,
+    D: FromSample<I::Item> + Sample + Default + SimdElement,
 {
     #[inline]
     fn current_frame_len(&self) -> Option<usize> {
@@ -155,7 +159,7 @@ pub struct Scheduler<I, D>
 where
     I: Source,
     I::Item: Sample,
-    D: FromSample<I::Item> + Sample + Default,
+    D: FromSample<I::Item> + Sample + Default + SimdElement,
 {
     input: UniformSourceIterator<I, D>,
     sources: Vec<SingleSourceScheduler<I, D>>,
@@ -168,7 +172,7 @@ impl<I, D> Scheduler<I, D>
 where
     I: Source,
     I::Item: Sample,
-    D: FromSample<I::Item> + Sample + Default,
+    D: FromSample<I::Item> + Sample + Default + SimdElement,
 {
     /// Creates a new source inside of which sounds can be scheduled.
     #[inline]
@@ -196,7 +200,7 @@ where
 
     /// Adds a new Source.
     #[inline]
-    #[instrument]
+    #[cfg_attr(feature = "profiler", instrument)]
     pub fn schedule_source(&mut self, source: I) -> usize 
     {
         let source_scheduler: SingleSourceScheduler<I, D> = SingleSourceScheduler::new(source, self.sample_rate(), self.channels());
@@ -208,7 +212,7 @@ where
 
     /// Retrieves a mutable reference to a specified Source Scheduler.
     #[inline]
-    #[instrument]
+    #[cfg_attr(feature = "profiler", instrument)]
     pub fn get_scheduler(&mut self, source_idx: usize) -> Option<&mut SingleSourceScheduler<I, D>>
     {
         self.sources.get_mut(source_idx)
@@ -219,12 +223,12 @@ impl<I, D> Iterator for Scheduler<I, D>
 where
     I: Source,
     I::Item: Sample,
-    D: FromSample<I::Item> + Sample + Default,
+    D: FromSample<I::Item> + Sample + Default + SimdElement,
 {
     type Item = D;
 
     #[inline]
-    #[instrument]
+    #[cfg_attr(feature = "profiler", instrument(name = "Scheduler::next"))]
     fn next(&mut self) -> Option<D> {
         let input_sample = self.input.next();
 
@@ -258,7 +262,7 @@ impl<I, D> Source for Scheduler<I, D>
 where
     I: Source,
     I::Item: Sample,
-    D: FromSample<I::Item> + Sample + Default,
+    D: FromSample<I::Item> + Sample + Default + SimdElement,
 {
     #[inline]
     fn current_frame_len(&self) -> Option<usize> {

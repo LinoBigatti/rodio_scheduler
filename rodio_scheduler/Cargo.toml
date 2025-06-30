@@ -5,4 +5,10 @@ edition = "2024"
 
 [dependencies]
 rodio = "0.20.1"
-time-graph = { version = "0.3.2", features = ["table"] }
+time-graph = { version = "0.3.2", features = ["table"], optional = true }
+multiversion = { version = "0.8.0", optional = true }
+
+[features]
+default = ["simd", "profiler"]
+simd = ["dep:multiversion"]
+profiler = ["dep:time-graph"]
