@@ -4,7 +4,7 @@
 //! at specific timestamps. This is useful for applications that require precise audio
 //! scheduling, such as rhythm games, digital audio workstations (DAWs), or music players.
 //!
-//! ## Nightly Rust Requirement
+//! ## Important
 //!
 //! This crate requires the nightly Rust compiler because it uses the `portable-simd` feature,
 //! which has not yet been stabilized.

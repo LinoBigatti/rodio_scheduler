@@ -6,13 +6,17 @@
 
 A library for sample-perfect audio scheduling with rodio. 
 
+## Important
+
+This crate requires the nightly Rust compiler because it uses the `portable-simd` feature, which has not yet been stabilized.
+
 ## Usage
 
 Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-rodio_scheduler = "0.1.0"
+rodio_scheduler = "0.1.1"
 ```
 
 Here is an example of how to use the library to schedule a sound and keep track of the sample counter. For more information, see the [Docs](https://docs.rs/rodio_scheduler).
