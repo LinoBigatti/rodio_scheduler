@@ -35,7 +35,7 @@ fn main() {
     
     //let mut scheduler = Scheduler::new(metronome_decoder_source, 48000, 2);
     let sample_counter = Arc::new(AtomicU64::new(0));
-    let mut scheduler = Scheduler::with_capacity(metronome_decoder_source, sample_counter.clone(), 48000, 2, 800);
+    let mut scheduler = Scheduler::with_capacity(metronome_decoder_source, sample_counter.clone(), 48000, 2, 10);
     let note_hit_id = scheduler.schedule_source(note_hit_decoder_source);
 
     for i in 0..8000 {

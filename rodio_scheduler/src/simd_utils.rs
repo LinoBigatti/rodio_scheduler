@@ -1,3 +1,9 @@
+//! This module provides SIMD-related utilities and traits.
+//!
+//! When the `simd` feature is enabled, this module provides traits and structs for
+//! working with SIMD vectors, including iterators and operations for different sample types.
+//! When the `simd` feature is not enabled, it provides dummy traits to ensure the code compiles.
+
 #[cfg(feature="profiler")]
 use time_graph::instrument;
 
@@ -10,7 +16,10 @@ use std::simd::cmp::SimdPartialOrd;
 #[cfg(feature="simd")]
 use std::simd::num::{SimdFloat, SimdInt, SimdUint};
 
-#[cfg(feature = "simd")]
+/// Gathers elements from a source slice into a SIMD vector, with a fallback for out-of-bounds indices.
+///
+/// This function is used when the `simd` feature is enabled.
+#[cfg(feature="simd")]
 #[cfg_attr(feature = "profiler", instrument)]
 pub fn gather_select_or_checked_u64<T, const N: usize>(source: &[T], idxs: Simd<u64, N>, mask: Mask<i64, N>, or: Simd<T, N>) -> Simd<T, N> where 
     T: SimdOps,
@@ -28,6 +37,7 @@ pub fn gather_select_or_checked_u64<T, const N: usize>(source: &[T], idxs: Simd<
     Simd::gather_select(source, mask_isize, idxs_usize, or)
 }
 
+/// A trait for iterators that yield SIMD vectors.
 #[cfg(feature="simd")]
 pub trait SimdIterator<T, const N: usize>: Iterator<Item = (Simd<T, N>, Mask<T::Mask, N>)> 
 where
@@ -43,6 +53,7 @@ where
     LaneCount<N>: SupportedLaneCount,
 {}
 
+/// An iterator that yields SIMD vectors from a slice.
 #[cfg(feature="simd")]
 pub struct SimdIter<'a, T, const N: usize> 
 where
@@ -60,6 +71,7 @@ where
     T: SimdElement,
     LaneCount<N>: SupportedLaneCount,
 {
+    /// Creates a new `SimdIter` from a slice and a fallback SIMD vector.
     #[inline]
     #[allow(dead_code)]
     pub fn from_slice_or(src: &'a [T], or: Simd<T, N>) -> SimdIter<'a, T, N> {
@@ -70,6 +82,7 @@ where
         }
     }
 
+    /// Creates a new `SimdIter` from a slice, with a default value as the fallback.
     #[inline]
     #[allow(dead_code)]
     pub fn from_slice_or_default(src: &'a [T]) -> SimdIter<'a, T, N> where T: Default {
@@ -80,6 +93,7 @@ where
         }
     }
 
+    /// Creates a new `SimdIter` from a slice, with the zero value of the sample type as the fallback.
     #[inline]
     #[allow(dead_code)]
     pub fn from_slice_or_zero_value(src: &'a [T]) -> SimdIter<'a, T, N> where T: rodio::Sample {
@@ -142,6 +156,9 @@ where
     }
 }
 
+/// A trait for types that support SIMD operations.
+///
+/// When the `simd` feature is not enabled, this is a dummy trait.
 #[cfg(not(feature = "simd"))]
 pub trait SimdOps: Sized + rodio::Sample {}
 
@@ -151,11 +168,17 @@ where
     T: Sized + rodio::Sample
 {}
 
+/// A trait for types that support SIMD operations.
+///
+/// When the `simd` feature is enabled, this trait provides methods for SIMD addition
+/// and horizontal addition for different sample types.
 #[cfg(feature = "simd")]
 pub trait SimdOps: Sized + SimdElement + rodio::Sample {
+    /// Adds two SIMD vectors.
     fn add<const N: usize>(a: Simd<Self, N>, b: Simd<Self, N>) -> Simd<Self, N>
     where
         LaneCount<N>: SupportedLaneCount;
+    /// Horizontally adds the elements of a SIMD vector.
     fn horizontal_add<const N: usize>(a: Simd<Self, N>) -> Self
     where
         LaneCount<N>: SupportedLaneCount;

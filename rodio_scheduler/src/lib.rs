@@ -18,12 +18,27 @@ use rodio::Sample;
 
 use rodio::cpal::FromSample;
 
+/// Represents a playback event to be scheduled.
 pub struct PlaybackEvent {
+    /// The identifier of the source to be played.
     pub source_id: usize,
+    /// The timestamp at which the event should occur, measured in samples.
+    /// The user is responsible for providing a timestamp that is compatible with the scheduler's sample rate.
     pub timestamp: u64,
+    /// An optional repeat configuration.
+    ///
+    /// The tuple contains two values:
+    /// 1. The duration of a single beat in samples.
+    /// 2. The number of times the beat should be repeated.
     pub repeat: Option<(u64, u64)>,
 }
 
+/// A source that schedules playback of a single audio source at precise timestamps.
+///
+/// # Type Parameters
+///
+/// * `I`: The type of the input audio source.
+/// * `D`: The sample type used for processing and output, after conversion from `I::Item`.
 pub struct SingleSourceScheduler<I, D> 
 where
     I: Source,
@@ -47,7 +62,13 @@ where
     I::Item: Sample,
     D: FromSample<I::Item> + Sample + SimdOps,
 {
-    /// Creates a new source inside of which sounds can be scheduled.
+    /// Creates a new `SingleSourceScheduler`.
+    ///
+    /// # Arguments
+    ///
+    /// * `source`: The audio source to be scheduled.
+    /// * `sample_rate`: The sample rate of the output audio.
+    /// * `channels`: The number of channels in the output audio.
     #[inline]
     pub fn new(source: I, sample_rate: u32, channels: u16) -> SingleSourceScheduler<I, D> {
         SingleSourceScheduler {
@@ -61,7 +82,10 @@ where
         }
     }
 
-    /// Schedule this source for precise playback in the future.
+    /// Schedules a `PlaybackEvent` for this source.
+    ///
+    /// The event's timestamp is converted to a sample index and added to the playback schedule.
+    /// The schedule is then sorted to ensure correct playback order.
     #[inline]
     pub fn schedule_event(&mut self, event: PlaybackEvent) {
         self.playback_schedule.push(event.timestamp * self.channels as u64);
@@ -93,7 +117,7 @@ where
                 self.playback_position.0 += 1
             }
 
-            while self.playback_position.1 < schedule_size &&
+            while self.playback_position.1 <= schedule_size &&
                   self.playback_schedule[self.playback_position.1] <= self.samples_counted {
                 self.playback_position.1 += 1
             }
@@ -151,16 +175,84 @@ where
     }
 }
 
+/// A source that schedules playback of other sources at precise timestamps.
+///
+/// The `Scheduler` takes an input source and allows you to schedule additional sources
+/// to be played at specific sample timestamps. It mixes the output of the scheduled sources
+/// with the input source.
+///
+/// # Type Parameters
+///
+/// * `I`: The type of the input audio source.
+/// * `D`: The sample type used for processing and output.
+///
+/// # Example
+///
+/// ```no_run
+/// use std::fs::File;
+/// use std::io::BufReader;
+/// use std::sync::atomic::Ordering;
+///
+/// use rodio::{Source, Decoder, OutputStream};
+/// use rodio_scheduler::{Scheduler, PlaybackEvent};
+///
+/// fn main() {
+///    // Get an output stream handle to the default physical sound device.
+///    let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+///
+///    // Load a sound from a file.
+///    let metronome = BufReader::new(File::open("assets/metronome.wav").unwrap());
+///    let metronome_decoder_source = Decoder::new(metronome).unwrap();
+///
+///    // Create a scheduler.
+///    let mut scheduler = Scheduler::new(metronome_decoder_source, 48000, 2);
+///
+///    // Load another sound to be scheduled.
+///    let note_hit = BufReader::new(File::open("assets/note_hit.wav").unwrap());
+///    let note_hit_decoder_source = Decoder::new(note_hit).unwrap();
+///
+///    // Add the sound to the scheduler.
+///    let note_hit_id = scheduler.schedule_source(note_hit_decoder_source);
+///
+///    // Schedule the sound to be played at a specific timestamp.
+///    let event = PlaybackEvent {
+///        source_id: note_hit_id,
+///        timestamp: scheduler.sample_rate() as u64 * 2, // 2 seconds in
+///        repeat: None,
+///    };
+///    scheduler.get_scheduler(note_hit_id).unwrap().schedule_event(event);
+///
+///    // Get the sample counter before moving the scheduler to the audio thread
+///    let sample_counter = scheduler.get_sample_counter();
+///
+///    // Play the scheduled sounds.
+///    let _ = stream_handle.play_raw(scheduler);
+///
+///    // Get the current sample index while playing
+///    let _current_samples = sample_counter.load(Ordering::SeqCst);
+///    //do_something(current_samples);
+///
+///    // The sound plays in a separate audio thread,
+///    // so we need to keep the main thread alive while it's playing.
+///    std::thread::sleep(std::time::Duration::from_secs(5));
+///}
+/// ```
 pub struct Scheduler<I, D> 
 where
     I: Source,
     I::Item: Sample,
     D: FromSample<I::Item> + Sample + SimdOps,
 {
+    /// The main input source that the scheduled sources will be mixed with.
     input: UniformSourceIterator<I, D>,
+    /// A vector of `SingleSourceScheduler`s, each managing a single scheduled source.
     sources: Vec<SingleSourceScheduler<I, D>>,
+    /// An atomic counter to track the current sample number.
+    /// This is managed by the user and should be shared with the audio thread.
     sample_counter: Arc<AtomicU64>,
+    /// The number of samples that have been processed.
     samples_counted: u64,
+    /// The number of channels that have been processed for the current sample.
     channels_counted: u16,
 }
 
@@ -170,9 +262,17 @@ where
     I::Item: Sample,
     D: FromSample<I::Item> + Sample + SimdOps,
 {
-    /// Creates a new source inside of which sounds can be scheduled.
+    /// Creates a new `Scheduler`.
+    ///
+    /// # Arguments
+    ///
+    /// * `input`: The main audio source.
+    /// * `sample_rate`: The sample rate of the output audio.
+    /// * `channels`: The number of channels in the output audio.
     #[inline]
-    pub fn new(input: I, sample_counter: Arc<AtomicU64>, sample_rate: u32, channels: u16) -> Scheduler<I, D> {
+    pub fn new(input: I, sample_rate: u32, channels: u16) -> Scheduler<I, D> {
+        let sample_counter = Arc::new(AtomicU64::new(0));
+
         Scheduler {
             input: UniformSourceIterator::new(input, channels, sample_rate),
             sources: Vec::new(),
@@ -182,7 +282,34 @@ where
         }
     }
 
-    /// Creates a new source inside of which sounds can be scheduled, with a given capacity.
+    /// Creates a new `Scheduler`, with a given sample counter.
+    ///
+    /// # Arguments
+    ///
+    /// * `input`: The main audio source.
+    /// * `sample_counter`: An `Arc<AtomicU64>` to keep track of the playback position.
+    /// * `sample_rate`: The sample rate of the output audio.
+    /// * `channels`: The number of channels in the output audio.
+    #[inline]
+    pub fn with_sample_counter(input: I, sample_counter: Arc<AtomicU64>, sample_rate: u32, channels: u16) -> Scheduler<I, D> {
+        Scheduler {
+            input: UniformSourceIterator::new(input, channels, sample_rate),
+            sources: Vec::new(),
+            sample_counter: sample_counter,
+            samples_counted: 0,
+            channels_counted: 0,
+        }
+    }
+
+    /// Creates a new `Scheduler` with a specified capacity for scheduled sources.
+    ///
+    /// # Arguments
+    ///
+    /// * `input`: The main audio source.
+    /// * `sample_counter`: An `Arc<AtomicU64>` to keep track of the playback position.
+    /// * `sample_rate`: The sample rate of the output audio.
+    /// * `channels`: The number of channels in the output audio.
+    /// * `capacity`: The initial capacity for the number of scheduled sources.
     #[inline]
     pub fn with_capacity(input: I, sample_counter: Arc<AtomicU64>, sample_rate: u32, channels: u16, capacity: usize) -> Scheduler<I, D> {
         Scheduler {
@@ -194,7 +321,9 @@ where
         }
     }
 
-    /// Adds a new Source.
+    /// Adds a new source to the scheduler.
+    ///
+    /// Returns a `usize` identifier for the new source, which can be used to schedule playback events.
     #[inline]
     #[cfg_attr(feature = "profiler", instrument)]
     pub fn schedule_source(&mut self, source: I) -> usize 
@@ -206,12 +335,23 @@ where
         self.sources.len() - 1
     }
 
-    /// Retrieves a mutable reference to a specified Source Scheduler.
+    /// Retrieves a mutable reference to a `SingleSourceScheduler` by its ID.
+    ///
+    /// This allows you to schedule events for a specific source.
     #[inline]
     #[cfg_attr(feature = "profiler", instrument)]
     pub fn get_scheduler(&mut self, source_idx: usize) -> Option<&mut SingleSourceScheduler<I, D>>
     {
         self.sources.get_mut(source_idx)
+    }
+
+    /// Retrieves a reference to the internal high-resolution sample counter.
+    ///
+    /// This allows you to synchronize external events with the audio playback.
+    #[inline]
+    pub fn get_sample_counter(&self) -> Arc<AtomicU64>
+    {
+        self.sample_counter.clone()
     }
 }
 

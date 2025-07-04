@@ -1,3 +1,9 @@
+//! This module provides SIMD-accelerated and scalar fallback functions for audio processing.
+//!
+//! The functions in this module are used to retrieve and mix audio samples.
+//! When the `simd` feature is enabled, SIMD instructions are used to process samples in parallel,
+//! which can lead to significant performance improvements. Otherwise, a scalar fallback is used.
+
 #[cfg(feature="profiler")]
 use time_graph::instrument;
 
@@ -12,6 +18,9 @@ use std::simd::cmp::SimdPartialEq;
 use crate::simd_utils::{SimdIter, SimdIterator, gather_select_or_checked_u64};
 use crate::simd_utils::SimdOps;
 
+/// Retrieves samples from a source based on a playback schedule.
+///
+/// This is a scalar fallback function used when the `simd` feature is not enabled.
 #[inline]
 #[cfg(not(feature = "simd"))]
 #[cfg_attr(feature = "profiler", instrument)]
@@ -32,6 +41,9 @@ pub fn retrieve_samples_scalar<'a, D: rodio::Sample>(source: &'a [D], playback_s
     output
 }
 
+/// Mixes a slice of samples with an input sample.
+///
+/// This is a scalar fallback function used when the `simd` feature is not enabled.
 #[inline]
 #[cfg(not(feature = "simd"))]
 #[cfg_attr(feature = "profiler", instrument)]
@@ -43,6 +55,9 @@ pub fn mix_samples_scalar<D: rodio::Sample>(samples: &[D], input_sample: Option<
     })
 }
 
+/// Retrieves samples from a source based on a playback schedule using SIMD instructions.
+///
+/// This function is used when the `simd` feature is enabled.
 #[inline]
 #[cfg(feature = "simd")]
 #[cfg_attr(feature = "profiler", instrument)]
@@ -75,6 +90,9 @@ pub fn retrieve_samples_simd<'a, D, const N: usize>(source: &'a [D], playback_sc
     simd_iter.map(f)
 }
 
+/// Mixes a slice of samples with an input sample using SIMD instructions.
+///
+/// This function is used when the `simd` feature is enabled.
 #[inline]
 #[cfg(feature = "simd")]
 #[cfg_attr(feature = "profiler", instrument)]
@@ -125,6 +143,10 @@ where
     //Some(acc)
 }
 
+/// Mixes a slice of samples with an input sample.
+///
+/// This function will use SIMD instructions if the `simd` feature is enabled, otherwise it will
+/// use a scalar fallback.
 #[inline]
 #[cfg_attr(feature = "profiler", instrument)]
 pub fn mix_samples<D>(samples: &[D], input_sample: Option<D>) -> Option<D>
@@ -147,6 +169,10 @@ where
 }
 
 
+/// Retrieves and mixes samples from a source.
+///
+/// This function will use SIMD instructions if the `simd` feature is enabled, otherwise it will
+/// use a scalar fallback.
 #[inline]
 #[cfg_attr(feature = "profiler", instrument)]
 pub fn retrieve_and_mix_samples<'a, D>(source: &'a [D], playback_schedule: &[u64], queue_index: (usize, usize), sample_n: u64) -> Option<D> 
