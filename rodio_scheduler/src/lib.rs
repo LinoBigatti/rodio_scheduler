@@ -4,16 +4,14 @@
 use time_graph::instrument;
 
 mod simd;
-mod simd_iter;
+mod simd_utils;
+use simd_utils::SimdOps;
 //mod simd_macros;
 
 use std::time::Duration;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-
-use std::default::Default;
-use std::simd::SimdElement;
 
 use rodio::source::{Source, UniformSourceIterator, SeekError};
 use rodio::Sample;
@@ -30,7 +28,7 @@ pub struct SingleSourceScheduler<I, D>
 where
     I: Source,
     I::Item: Sample,
-    D: FromSample<I::Item> + Sample + Default + SimdElement,
+    D: FromSample<I::Item> + Sample + SimdOps,
 {
     source: Vec<D>,
     channels: u16,
@@ -47,7 +45,7 @@ impl<I, D> SingleSourceScheduler<I, D>
 where
     I: Source,
     I::Item: Sample,
-    D: FromSample<I::Item> + Sample + Default + SimdElement,
+    D: FromSample<I::Item> + Sample + SimdOps,
 {
     /// Creates a new source inside of which sounds can be scheduled.
     #[inline]
@@ -75,7 +73,7 @@ impl<I, D> Iterator for SingleSourceScheduler<I, D>
 where
     I: Source,
     I::Item: Sample,
-    D: FromSample<I::Item> + Sample + Default + SimdElement,
+    D: FromSample<I::Item> + Sample + SimdOps,
 {
     type Item = D;
 
@@ -118,7 +116,7 @@ impl<I, D> Source for SingleSourceScheduler<I, D>
 where
     I: Source,
     I::Item: Sample,
-    D: FromSample<I::Item> + Sample + Default + SimdElement,
+    D: FromSample<I::Item> + Sample + SimdOps,
 {
     #[inline]
     fn current_frame_len(&self) -> Option<usize> {
@@ -157,7 +155,7 @@ pub struct Scheduler<I, D>
 where
     I: Source,
     I::Item: Sample,
-    D: FromSample<I::Item> + Sample + Default + SimdElement,
+    D: FromSample<I::Item> + Sample + SimdOps,
 {
     input: UniformSourceIterator<I, D>,
     sources: Vec<SingleSourceScheduler<I, D>>,
@@ -170,7 +168,7 @@ impl<I, D> Scheduler<I, D>
 where
     I: Source,
     I::Item: Sample,
-    D: FromSample<I::Item> + Sample + Default + SimdElement,
+    D: FromSample<I::Item> + Sample + SimdOps,
 {
     /// Creates a new source inside of which sounds can be scheduled.
     #[inline]
@@ -221,7 +219,7 @@ impl<I, D> Iterator for Scheduler<I, D>
 where
     I: Source,
     I::Item: Sample,
-    D: FromSample<I::Item> + Sample + Default + SimdElement,
+    D: FromSample<I::Item> + Sample + SimdOps,
 {
     type Item = D;
 
@@ -247,7 +245,7 @@ where
                                             .collect();
 
         // Mix scheduled and input samples
-        simd::simd_mix_samples(playing_samples.as_slice(), input_sample)
+        simd::mix_samples(playing_samples.as_slice(), input_sample)
     }
 
     #[inline]
@@ -260,7 +258,7 @@ impl<I, D> Source for Scheduler<I, D>
 where
     I: Source,
     I::Item: Sample,
-    D: FromSample<I::Item> + Sample + Default + SimdElement,
+    D: FromSample<I::Item> + Sample + SimdOps,
 {
     #[inline]
     fn current_frame_len(&self) -> Option<usize> {
