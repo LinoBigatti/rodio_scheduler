@@ -1,3 +1,72 @@
+//! A library for scheduling audio playback with `rodio`.
+//!
+//! `rodio_scheduler` provides a `rodio` `Source` that can schedule other sources to be played
+//! at specific timestamps. This is useful for applications that require precise audio
+//! scheduling, such as rhythm games, digital audio workstations (DAWs), or music players.
+//!
+//! ## Nightly Rust Requirement
+//!
+//! This crate requires the nightly Rust compiler because it uses the `portable-simd` feature,
+//! which has not yet been stabilized.
+//!
+//! ## Features
+//!
+//! - **Sample-perfect Scheduling**: Schedule audio playback with sample-level accuracy.
+//! - **Atomic Sample Counter**: Provides a thread-safe sample counter to synchronize
+//!   external events with audio playback.
+//! - **SIMD Acceleration**: Uses SIMD for mixing audio samples, providing a small
+//!   performance boost. This can be enabled with the `simd` feature flag.
+//! - **Optional Profiling**: Includes an optional `profiler` feature to instrument the code
+//!   and analyze its performance using `time-graph`. Beware that this has a big performance
+//!   penalty.
+//!
+//! ## Example
+//!
+//! The following example shows how to schedule a sound to be played after 2 seconds.
+//!
+//! ```no_run
+//! use std::fs::File;
+//! use std::io::BufReader;
+//! use std::time::Duration;
+//!
+//! use rodio::{Decoder, OutputStream, source::Source};
+//! use rodio_scheduler::{Scheduler, PlaybackEvent};
+//!
+//! fn main() {
+//!     // Get an output stream handle to the default physical sound device.
+//!     let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+//!
+//!     // A source to play as the background audio.
+//!     let background = rodio::source::SineWave::new(440.0);
+//!
+//!     // Create a scheduler.
+//!     let mut scheduler = Scheduler::<_, f32>::new(background, 48000, 2);
+//!
+//!     // Load a sound to be scheduled.
+//!     let file = BufReader::new(File::open("assets/note_hit.wav").unwrap());
+//!     let note_hit = Decoder::new(file).unwrap();
+//!
+//!     // Add the sound to the scheduler.
+//!     let note_hit_id = scheduler.add_source(note_hit);
+//!
+//!     // Schedule the sound to be played at 2 seconds.
+//!     let event = PlaybackEvent {
+//!         source_id: note_hit_id,
+//!         timestamp: 48000 * 2, // 2 seconds in samples
+//!         repeat: None,
+//!     };
+//!     scheduler.get_scheduler(note_hit_id).unwrap().schedule_event(event);
+//!
+//!     // Play the scheduled sounds.
+//!     stream_handle.play_raw(scheduler.convert_samples()).unwrap();
+//!
+//!     // The sound plays in a separate audio thread, so we need to keep the main
+//!     // thread alive while it's playing.
+//!     std::thread::sleep(Duration::from_secs(5));
+//! }
+//! ```
+
+// rodio_scheduler requires nightly rust, because portable-simd is not stabilized yet.
 #![feature(portable_simd)]
 
 #[cfg(feature="profiler")]
@@ -6,7 +75,6 @@ use time_graph::instrument;
 mod simd;
 mod simd_utils;
 use simd_utils::SimdOps;
-//mod simd_macros;
 
 use std::time::Duration;
 
@@ -211,8 +279,8 @@ where
 ///    let note_hit = BufReader::new(File::open("assets/note_hit.wav").unwrap());
 ///    let note_hit_decoder_source = Decoder::new(note_hit).unwrap();
 ///
-///    // Add the sound to the scheduler.
-///    let note_hit_id = scheduler.schedule_source(note_hit_decoder_source);
+///    // Add the sound to the scheduler, with a list of playback events to schedule.
+///    let note_hit_id = scheduler.add_source(note_hit_decoder_source);
 ///
 ///    // Schedule the sound to be played at a specific timestamp.
 ///    let event = PlaybackEvent {
@@ -326,7 +394,7 @@ where
     /// Returns a `usize` identifier for the new source, which can be used to schedule playback events.
     #[inline]
     #[cfg_attr(feature = "profiler", instrument)]
-    pub fn schedule_source(&mut self, source: I) -> usize 
+    pub fn add_source(&mut self, source: I) -> usize 
     {
         let source_scheduler: SingleSourceScheduler<I, D> = SingleSourceScheduler::new(source, self.sample_rate(), self.channels());
 
@@ -421,7 +489,7 @@ where
     }
 
     #[inline]
-    fn try_seek(&mut self, pos: Duration) -> Result<(), SeekError> {
-        self.input.try_seek(pos)
-    }
+fn try_seek(&mut self, pos: Duration) -> Result<(), SeekError> {
+    self.input.try_seek(pos)
+}
 }

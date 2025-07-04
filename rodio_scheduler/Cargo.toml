@@ -2,6 +2,12 @@
 name = "rodio_scheduler"
 version = "0.1.0"
 edition = "2024"
+description = "A library for sample-perfect audio scheduling with rodio."
+license = "MIT"
+repository = "https://github.com/LinoBigatti/coop-editor/tree/master/rodio_scheduler"
+readme = "README.md"
+keywords = ["rodio", "audio", "scheduler", "scheduling"]
+categories = ["multimedia::audio", "game-development"]
 
 [dependencies]
 rodio = "0.20.1"
