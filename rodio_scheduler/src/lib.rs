@@ -365,6 +365,8 @@ where
     /// * `channels`: The number of channels in the output audio.
     #[inline]
     pub fn with_sample_counter(input: I1, sample_counter: Arc<AtomicU64>, sample_rate: u32, channels: u16) -> Scheduler<I1, I2, D> {
+        sample_counter.store(0, Ordering::SeqCst);
+
         Scheduler {
             input: UniformSourceIterator::new(input, channels, sample_rate),
             sources: Vec::new(),
@@ -385,6 +387,8 @@ where
     /// * `capacity`: The initial capacity for the number of scheduled sources.
     #[inline]
     pub fn with_capacity(input: I1, sample_counter: Arc<AtomicU64>, sample_rate: u32, channels: u16, capacity: usize) -> Scheduler<I1, I2, D> {
+        sample_counter.store(0, Ordering::SeqCst);
+
         Scheduler {
             input: UniformSourceIterator::new(input, channels, sample_rate),
             sources: Vec::with_capacity(capacity),
