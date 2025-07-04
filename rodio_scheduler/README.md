@@ -2,7 +2,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/rodio_scheduler.svg)](https://crates.io/crates/rodio_scheduler)
 [![Docs.rs](https://docs.rs/rodio_scheduler/badge.svg)](https://docs.rs/rodio_scheduler)
-[![License: MIT](httpshttps://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A library for sample-perfect audio scheduling with rodio. 
 
