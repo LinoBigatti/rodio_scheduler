@@ -24,7 +24,6 @@ Here is an example of how to use the library to schedule a sound and keep track 
 ```rust
 use std::fs::File;
 use std::io::BufReader;
-use std::sync::atomic::Ordering;
 
 use rodio::{Source, Decoder, OutputStream};
 use rodio_scheduler::{Scheduler, PlaybackEvent};
@@ -62,7 +61,7 @@ fn main() {
    let _ = stream_handle.play_raw(scheduler);
 
    // Get the current sample index while playing
-   let _current_samples = sample_counter.load(Ordering::SeqCst);
+   let _current_samples = sample_counter.get();
    //do_something(current_samples);
 
    // The sound plays in a separate audio thread,

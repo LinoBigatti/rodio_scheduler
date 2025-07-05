@@ -57,8 +57,15 @@
 //!     };
 //!     scheduler.get_scheduler(note_hit_id).unwrap().schedule_event(event);
 //!
+//!     // Get the sample counter before moving the scheduler to the audio thread
+//!     let sample_counter = scheduler.get_sample_counter();
+//!
 //!     // Play the scheduled sounds.
 //!     stream_handle.play_raw(scheduler.convert_samples()).unwrap();
+//!
+//!     // Get the current sample index while playing
+//!     let _current_samples = sample_counter.get();
+//!     //do_something(current_samples);
 //!
 //!     // The sound plays in a separate audio thread, so we need to keep the main
 //!     // thread alive while it's playing.
@@ -79,12 +86,47 @@ use simd_utils::SimdOps;
 use std::time::Duration;
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{fence, AtomicU64, Ordering};
 
 use rodio::source::{Source, UniformSourceIterator, SeekError};
 use rodio::Sample;
 
 use rodio::cpal::FromSample;
+
+/// A high-speed, high-performance sample counter.
+pub struct SampleCounter {
+    inner: AtomicU64,
+}
+
+impl SampleCounter {
+    pub fn new() -> SampleCounter {
+        SampleCounter {
+            inner: AtomicU64::new(0),
+        }
+    }
+
+    pub fn get(&self) -> u64 {
+        fence(Ordering::SeqCst);
+
+        self.inner.load(Ordering::Relaxed)
+    }
+
+    pub fn set(&self, value: u64) {
+        fence(Ordering::Acquire);
+
+        self.inner.store(value, Ordering::Relaxed);
+
+        fence(Ordering::Release);
+    }
+
+    pub fn increment(&self) {
+        fence(Ordering::Acquire);
+
+        self.inner.fetch_add(1, Ordering::Relaxed);
+
+        fence(Ordering::Release);
+    }
+}
 
 /// Represents a playback event to be scheduled.
 pub struct PlaybackEvent {
@@ -260,7 +302,6 @@ where
 /// ```no_run
 /// use std::fs::File;
 /// use std::io::BufReader;
-/// use std::sync::atomic::Ordering;
 ///
 /// use rodio::{Source, Decoder, OutputStream};
 /// use rodio_scheduler::{Scheduler, PlaybackEvent};
@@ -298,7 +339,7 @@ where
 ///    let _ = stream_handle.play_raw(scheduler.convert_samples());
 ///
 ///    // Get the current sample index while playing
-///    let _current_samples = sample_counter.load(Ordering::SeqCst);
+///    let _current_samples = sample_counter.get();
 ///    //do_something(current_samples);
 ///
 ///    // The sound plays in a separate audio thread,
@@ -320,7 +361,7 @@ where
     sources: Vec<SingleSourceScheduler<I2, D>>,
     /// An atomic counter to track the current sample number.
     /// This is managed by the user and should be shared with the audio thread.
-    sample_counter: Arc<AtomicU64>,
+    sample_counter: Arc<SampleCounter>,
     /// The number of samples that have been processed.
     samples_counted: u64,
     /// The number of channels that have been processed for the current sample.
@@ -344,7 +385,7 @@ where
     /// * `channels`: The number of channels in the output audio.
     #[inline]
     pub fn new(input: I1, sample_rate: u32, channels: u16) -> Scheduler<I1, I2, D> {
-        let sample_counter = Arc::new(AtomicU64::new(0));
+        let sample_counter = Arc::new(SampleCounter::new());
 
         Scheduler {
             input: UniformSourceIterator::new(input, channels, sample_rate),
@@ -360,12 +401,12 @@ where
     /// # Arguments
     ///
     /// * `input`: The main audio source.
-    /// * `sample_counter`: An `Arc<AtomicU64>` to keep track of the playback position.
+    /// * `sample_counter`: An `Arc<SampleCounter>` to keep track of the playback position.
     /// * `sample_rate`: The sample rate of the output audio.
     /// * `channels`: The number of channels in the output audio.
     #[inline]
-    pub fn with_sample_counter(input: I1, sample_counter: Arc<AtomicU64>, sample_rate: u32, channels: u16) -> Scheduler<I1, I2, D> {
-        sample_counter.store(0, Ordering::SeqCst);
+    pub fn with_sample_counter(input: I1, sample_counter: Arc<SampleCounter>, sample_rate: u32, channels: u16) -> Scheduler<I1, I2, D> {
+        sample_counter.set(0);
 
         Scheduler {
             input: UniformSourceIterator::new(input, channels, sample_rate),
@@ -381,13 +422,13 @@ where
     /// # Arguments
     ///
     /// * `input`: The main audio source.
-    /// * `sample_counter`: An `Arc<AtomicU64>` to keep track of the playback position.
+    /// * `sample_counter`: An `Arc<SampleCounter>` to keep track of the playback position.
     /// * `sample_rate`: The sample rate of the output audio.
     /// * `channels`: The number of channels in the output audio.
     /// * `capacity`: The initial capacity for the number of scheduled sources.
     #[inline]
-    pub fn with_capacity(input: I1, sample_counter: Arc<AtomicU64>, sample_rate: u32, channels: u16, capacity: usize) -> Scheduler<I1, I2, D> {
-        sample_counter.store(0, Ordering::SeqCst);
+    pub fn with_capacity(input: I1, sample_counter: Arc<SampleCounter>, sample_rate: u32, channels: u16, capacity: usize) -> Scheduler<I1, I2, D> {
+        sample_counter.set(0);
 
         Scheduler {
             input: UniformSourceIterator::new(input, channels, sample_rate),
@@ -426,7 +467,7 @@ where
     ///
     /// This allows you to synchronize external events with the audio playback.
     #[inline]
-    pub fn get_sample_counter(&self) -> Arc<AtomicU64>
+    pub fn get_sample_counter(&self) -> Arc<SampleCounter>
     {
         self.sample_counter.clone()
     }
@@ -452,7 +493,7 @@ where
             self.samples_counted += 1;
             self.channels_counted = 0;
 
-            self.sample_counter.fetch_add(1, Ordering::SeqCst);
+            self.sample_counter.increment();
         } else {
             self.channels_counted += 1;
         }

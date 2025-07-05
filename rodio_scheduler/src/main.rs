@@ -2,11 +2,10 @@ use std::fs::File;
 use std::io::BufReader;
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64};
 
 use rodio::{Decoder, OutputStream};
 
-use rodio_scheduler::{Scheduler, PlaybackEvent};
+use rodio_scheduler::{Scheduler, PlaybackEvent, SampleCounter};
 
 #[cfg(feature = "profiler")]
 use time_graph;
@@ -34,7 +33,7 @@ fn main() {
     println!("Scheduling...");
     
     //let mut scheduler = Scheduler::new(metronome_decoder_source, 48000, 2);
-    let sample_counter = Arc::new(AtomicU64::new(0));
+    let sample_counter = Arc::new(SampleCounter::new());
     let mut scheduler = Scheduler::with_capacity(metronome_decoder_source, sample_counter.clone(), 48000, 2, 10);
     let note_hit_id = scheduler.add_source(note_hit_decoder_source);
 
@@ -55,17 +54,17 @@ fn main() {
 
     // The sound plays in a separate audio thread,
     // so we need to keep the main thread alive while it's playing.
-    std::thread::sleep(std::time::Duration::from_secs(5));
-    //let mut last = 0;
-    //while true {
-        //let val = sample_counter.load(Ordering::SeqCst);
+    //std::thread::sleep(std::time::Duration::from_secs(5));
+    let mut last = 0;
+    loop {
+        let val = sample_counter.get();
 
-        //if val != last {
-            //last = val;
+        if val != last {
+            last = val;
 
-            //println!("{}", val);
-        //}
-    //}
+            println!("{}", val);
+        }
+    }
 
 
     #[cfg(feature = "profiler")]
