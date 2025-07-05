@@ -93,25 +93,129 @@ use rodio::Sample;
 
 use rodio::cpal::FromSample;
 
-/// A high-speed, high-performance sample counter.
-#[repr(align(64))] // Cache line alignment
+/// A high-speed, high-performance sample counter designed for thread-safe
+/// tracking of audio samples.
+///
+/// This struct uses an `AtomicU64` internally to provide atomic operations,
+/// ensuring that the sample count can be safely accessed and modified
+/// across multiple threads, such as the audio processing thread and the
+/// main application thread.
+///
+/// # Examples
+///
+/// ```no_run
+/// use std::fs::File;
+/// use std::io::BufReader;
+/// use std::sync::Arc;
+/// use std::time::Duration;
+///
+/// use rodio::{Source, Decoder, OutputStream};
+/// use rodio_scheduler::{Scheduler, PlaybackEvent, SampleCounter};
+///
+/// fn main() {
+///    // Get an output stream handle to the default physical sound device.
+///    let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+///
+///    // Load a sound from a file.
+///    let metronome = BufReader::new(File::open("assets/metronome.wav").unwrap());
+///    let metronome_decoder_source = Decoder::new(metronome).unwrap();
+///
+///    // Construct a SampleCounter and a Scheduler using it.
+///    let sample_counter = Arc::new(SampleCounter::new());
+///    let mut scheduler = Scheduler::<_, _, f32>::with_sample_counter(
+///        metronome_decoder_source,
+///        sample_counter.clone(),
+///        48000,
+///        2,
+///    );
+///
+///    // Load another sound to be scheduled.
+///    let note_hit = BufReader::new(File::open("assets/note_hit.wav").unwrap());
+///    let note_hit_decoder_source = Decoder::new(note_hit).unwrap();
+///
+///    // Add the sound to the scheduler, with a list of playback events to schedule.
+///    let note_hit_id = scheduler.add_source(note_hit_decoder_source);
+///
+///    // Schedule the sound to be played at a specific timestamp.
+///    let event = PlaybackEvent {
+///        source_id: note_hit_id,
+///        timestamp: scheduler.sample_rate() as u64 * 2, // 2 seconds in
+///        repeat: None,
+///    };
+///    scheduler.get_scheduler(note_hit_id).unwrap().schedule_event(event);
+///
+///    // Play the scheduled sounds.
+///    let _ = stream_handle.play_raw(scheduler.convert_samples());
+///
+///    // Read the current sample count.
+///    let current_samples = sample_counter.get();
+///    println!("Current samples after starting playback: {}", current_samples);
+///
+///    // The sound plays in a separate audio thread,
+///    // so we need to keep the main thread alive while it's playing.
+///    std::thread::sleep(Duration::from_secs(5));
+///}
+/// ```
+#[repr(align(64))] // Cache line alignment to prevent false sharing issues
 pub struct SampleCounter {
     inner: AtomicU64,
 }
 
 impl SampleCounter {
+    /// Creates a new `SampleCounter` initialized to `0`.
+    ///
+    /// This operation does not involve any atomic memory orderings as it's
+    /// a simple initialization.
     pub fn new() -> SampleCounter {
         SampleCounter {
             inner: AtomicU64::new(0),
         }
     }
 
+    /// Retrieves the current sample count.
+    ///
+    /// # Memory Ordering
+    ///
+    /// - A `SeqCst` (Sequentially Consistent) fence is used before the load.
+    ///   This ensures that all memory operations preceding this fence are
+    ///   globally ordered with respect to other `SeqCst` operations. It acts
+    ///   as a strong memory barrier, making sure that any writes performed
+    ///   before this fence by other threads (that used `Release` or `SeqCst`
+    ///   ordering) are visible.
+    /// - The inner `load` operation itself is `Relaxed`,
+    ///   meaning it has no ordering constraints with other memory operations
+    ///   beyond its own atomicity. The `SeqCst` fence provides the necessary
+    ///   synchronization.
+    ///
+    /// This combination ensures that the loaded value is up-to-date with
+    /// respect to prior writes from other threads that used appropriate
+    /// `Release` or `SeqCst` orderings.
     pub fn get(&self) -> u64 {
         fence(Ordering::SeqCst);
 
         self.inner.load(Ordering::Relaxed)
     }
 
+    /// Sets the sample counter to a new `value`.
+    ///
+    /// # Memory Ordering
+    ///
+    /// - An `Acquire` fence is used before the store. This ensures that all
+    ///   memory operations *after* this fence happen after all memory
+    ///   operations *before* this fence. It also synchronizes with `Release`
+    ///   operations from other threads.
+    /// - The inner `store` operation is `Relaxed`,
+    ///   providing atomicity but no inherent ordering guarantees.
+    /// - A `Release` fence is used after the store. This ensures that all
+    ///   memory operations *before* this fence happen before all memory
+    ///   operations *after* this fence. It also synchronizes with `Acquire`
+    ///   operations from other threads.
+    ///
+    /// The combination of `Acquire` and `Release` fences around a `Relaxed`
+    /// store effectively creates a full memory barrier, ensuring that all
+    /// memory operations preceding this `set` call are visible to threads
+    /// performing `Acquire` operations, and all memory operations following
+    /// this `set` call are visible to threads performing `Release` operations.
     pub fn set(&self, value: u64) {
         fence(Ordering::Acquire);
 
@@ -120,6 +224,22 @@ impl SampleCounter {
         fence(Ordering::Release);
     }
 
+    /// Increments the sample counter by 1.
+    ///
+    /// # Memory Ordering
+    ///
+    /// - An `Acquire` fence is used before the `fetch_add`. Similar to `set`,
+    ///   this ensures ordering with subsequent operations and synchronizes
+    ///   with `Release` operations.
+    /// - The inner `fetch_add` operation is an atomic
+    ///   read-modify-write. It is `Relaxed`, meaning it's atomic but doesn't
+    ///   provide ordering guarantees with other memory operations on its own.
+    /// - A `Release` fence is used after the `fetch_add`. Similar to `set`,
+    ///   this ensures ordering with preceding operations and synchronizes
+    ///   with `Acquire` operations.
+    ///
+    /// The fences around the `fetch_add` operation provide a full memory
+    /// barrier, ensuring visibility and ordering similar to the `set` method.
     pub fn increment(&self) {
         fence(Ordering::Acquire);
 
