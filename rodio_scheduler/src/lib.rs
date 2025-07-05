@@ -94,6 +94,7 @@ use rodio::Sample;
 use rodio::cpal::FromSample;
 
 /// A high-speed, high-performance sample counter.
+#[repr(align(64))] // Cache line alignment
 pub struct SampleCounter {
     inner: AtomicU64,
 }
