@@ -452,7 +452,7 @@ where
             self.samples_counted += 1;
             self.channels_counted = 0;
 
-            self.sample_counter.store(self.samples_counted, Ordering::SeqCst);
+            self.sample_counter.fetch_add(1, Ordering::SeqCst);
         } else {
             self.channels_counted += 1;
         }
