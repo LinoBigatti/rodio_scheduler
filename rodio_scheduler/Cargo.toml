@@ -18,3 +18,11 @@ multiversion = { version = "0.8.0", optional = true }
 default = ["simd"]
 simd = ["dep:multiversion"]
 profiler = ["dep:time-graph"]
+
+[[test]]
+name = "unit_tests"
+path = "tests/unit_tests.rs"
+
+[[test]]
+name = "integration_tests"
+path = "tests/integration_tests.rs"

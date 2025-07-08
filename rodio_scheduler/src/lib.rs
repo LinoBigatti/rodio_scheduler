@@ -335,7 +335,10 @@ where
     #[inline]
     #[cfg_attr(feature = "profiler", instrument(name = "SingleSourceScheduler::next"))]
     fn next(&mut self) -> Option<D> {
-        // Set the sample and channel index for the next sample
+        // Cache the sample index for this sample
+        let s = self.samples_counted;
+
+        // Set the sample index for the next sample
         self.samples_counted += 1;
 
         // Update the playback position
@@ -344,17 +347,17 @@ where
             let schedule_size: usize = self.playback_schedule.len() - 1;
             
             while self.playback_position.0 < schedule_size &&
-                  (self.playback_schedule[self.playback_position.0] + source_size) < self.samples_counted {
+                  (self.playback_schedule[self.playback_position.0] + source_size) < s {
                 self.playback_position.0 += 1
             }
 
             while self.playback_position.1 <= schedule_size &&
-                  self.playback_schedule[self.playback_position.1] <= self.samples_counted {
+                  self.playback_schedule[self.playback_position.1] <= s {
                 self.playback_position.1 += 1
             }
         }
 
-        simd::retrieve_and_mix_samples(&self.source, &self.playback_schedule, self.playback_position, self.samples_counted)
+        simd::retrieve_and_mix_samples(&self.source, &self.playback_schedule, self.playback_position, s)
     }
 
     #[inline]
