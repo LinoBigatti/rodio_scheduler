@@ -135,8 +135,12 @@ where
             let start = self.i * N;
             let end = self.src.len();
 
+            let indices: Vec<usize> = (0..N).collect();
+            let indices_simd: Simd<usize, N> = Simd::from_slice(&indices);
+            let valid_loads: Mask<T::Mask, N> = indices_simd.simd_lt(Simd::splat(end - start)).cast();
+
             Some(
-                (Simd::load_or(&self.src[start..end], self.or), Mask::splat(true))
+                (Simd::load_or(&self.src[start..end], self.or), valid_loads)
             )
         };
 

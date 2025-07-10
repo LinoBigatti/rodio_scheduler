@@ -79,8 +79,8 @@
 #[cfg(feature="profiler")]
 use time_graph::instrument;
 
-mod simd;
-mod simd_utils;
+pub mod simd;
+pub mod simd_utils;
 use simd_utils::SimdOps;
 
 use std::time::Duration;
@@ -190,6 +190,7 @@ impl SampleCounter {
     /// This combination ensures that the loaded value is up-to-date with
     /// respect to prior writes from other threads that used appropriate
     /// `Release` or `SeqCst` orderings.
+    #[inline]
     pub fn get(&self) -> u64 {
         fence(Ordering::SeqCst);
 
@@ -216,6 +217,7 @@ impl SampleCounter {
     /// memory operations preceding this `set` call are visible to threads
     /// performing `Acquire` operations, and all memory operations following
     /// this `set` call are visible to threads performing `Release` operations.
+    #[inline]
     pub fn set(&self, value: u64) {
         fence(Ordering::Acquire);
 
@@ -240,6 +242,7 @@ impl SampleCounter {
     ///
     /// The fences around the `fetch_add` operation provide a full memory
     /// barrier, ensuring visibility and ordering similar to the `set` method.
+    #[inline]
     pub fn increment(&self) {
         fence(Ordering::Acquire);
 
@@ -667,7 +670,7 @@ where
     }
 
     #[inline]
-fn try_seek(&mut self, pos: Duration) -> Result<(), SeekError> {
-    self.input.try_seek(pos)
-}
+    fn try_seek(&mut self, pos: Duration) -> Result<(), SeekError> {
+        self.input.try_seek(pos)
+    }
 }

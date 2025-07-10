@@ -43,7 +43,7 @@ impl Iterator for DummySource {
             return Some(self.value)
         }
 
-        if s < (self.duration - 1) {
+        if s < self.duration {
             return Some(0.0)
         }
 

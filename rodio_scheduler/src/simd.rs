@@ -25,13 +25,26 @@ use crate::simd_utils::SimdOps;
 #[cfg(not(feature = "simd"))]
 #[cfg_attr(feature = "profiler", instrument)]
 pub fn retrieve_samples_scalar<'a, D: rodio::Sample>(source: &'a [D], playback_schedule: &[u64], queue_index: (usize, usize), sample_n: u64) -> Vec<D> {
+    if playback_schedule.len() == 0 {
+        return Vec::new()
+    }
+
     let playback_queue: &[u64] = &playback_schedule[queue_index.0..queue_index.1];
     let mut output = Vec::with_capacity(playback_queue.len());
+
+    if playback_queue.len() == 0 {
+        output.push(D::zero_value());
+
+        return output
+    }
 
     for &timestamp in playback_queue {
         if timestamp > sample_n { continue };
 
         let index = (sample_n - timestamp) as usize;
+        if index >= source.len() {
+            continue;
+        }
 
         if let Some(sample) = source.get(index) {
             output.push(*sample);
@@ -117,30 +130,6 @@ where
         Some(s) => Some(s.saturating_add(res.unwrap_or(D::zero_value()))),
         None => res,
     }
-    //if samples.is_empty() {
-        //return input_sample;
-    //}
-
-    //if samples_to_process.is_empty() {
-        //return Some(acc);
-    //}
-
-    //let (prefix, middle, suffix) = samples_to_process.as_simd::<N>();
-
-    //let mut simd_sum = Simd::splat(D::zero_value());
-    //for &chunk in middle {
-        //simd_sum = D::add(simd_sum, chunk);
-    //}
-
-    //let mut scalar_sum = D::horizontal_add(simd_sum);
-
-    //for sample in prefix.iter().chain(suffix.iter()) {
-        //scalar_sum = scalar_sum.saturating_add(*sample);
-    //}
-
-    //acc = acc.saturating_add(scalar_sum);
-
-    //Some(acc)
 }
 
 /// Mixes a slice of samples with an input sample.
