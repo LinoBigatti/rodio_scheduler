@@ -94,8 +94,6 @@ fn test_sample_counter_throughput_multithreaded() {
         let mut _seen_values = seen_values_clone.lock().unwrap();
         _seen_values.push(s);
         
-        let exit = false;
-
         while !exit_flag_clone.load(std::sync::atomic::Ordering::SeqCst) {
             s = counter_clone_1.get();
 
