@@ -26,24 +26,23 @@
 //!
 //! ```no_run
 //! use std::fs::File;
-//! use std::io::BufReader;
 //! use std::time::Duration;
 //!
-//! use rodio::{Decoder, OutputStream, source::Source};
+//! use rodio::{Decoder, Source, OutputStreamBuilder};
 //! use rodio_scheduler::{Scheduler, PlaybackEvent};
 //!
 //! fn main() {
 //!     // Get an output stream handle to the default physical sound device.
-//!     let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+//!     let stream = OutputStreamBuilder::open_default_stream().unwrap();
 //!
 //!     // A source to play as the background audio.
 //!     let background = rodio::source::SineWave::new(440.0);
 //!
 //!     // Create a scheduler.
-//!     let mut scheduler = Scheduler::<_, _, f32>::new(background, 48000, 2);
+//!     let mut scheduler = Scheduler::new(background, 48000, 2);
 //!
 //!     // Load a sound to be scheduled.
-//!     let file = BufReader::new(File::open("assets/note_hit.wav").unwrap());
+//!     let file = File::open("assets/note_hit.wav").unwrap();
 //!     let note_hit = Decoder::new(file).unwrap();
 //!
 //!     // Add the sound to the scheduler.
@@ -61,7 +60,7 @@
 //!     let sample_counter = scheduler.get_sample_counter();
 //!
 //!     // Play the scheduled sounds.
-//!     stream_handle.play_raw(scheduler.convert_samples()).unwrap();
+//!     let _ = stream.mixer().add(scheduler);
 //!
 //!     // Get the current sample index while playing
 //!     let _current_samples = sample_counter.get();
@@ -81,7 +80,6 @@ use time_graph::instrument;
 
 pub mod simd;
 pub mod simd_utils;
-use simd_utils::SimdOps;
 
 use std::time::Duration;
 
@@ -90,8 +88,6 @@ use std::sync::atomic::{fence, AtomicU64, Ordering};
 
 use rodio::source::{Source, UniformSourceIterator, SeekError};
 use rodio::Sample;
-
-use rodio::cpal::FromSample;
 
 /// A high-speed, high-performance sample counter designed for thread-safe
 /// tracking of audio samples.
@@ -105,24 +101,23 @@ use rodio::cpal::FromSample;
 ///
 /// ```no_run
 /// use std::fs::File;
-/// use std::io::BufReader;
 /// use std::sync::Arc;
 /// use std::time::Duration;
 ///
-/// use rodio::{Source, Decoder, OutputStream};
+/// use rodio::{Decoder, Source, OutputStreamBuilder};
 /// use rodio_scheduler::{Scheduler, PlaybackEvent, SampleCounter};
 ///
 /// fn main() {
 ///    // Get an output stream handle to the default physical sound device.
-///    let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+///    let stream = OutputStreamBuilder::open_default_stream().unwrap();
 ///
 ///    // Load a sound from a file.
-///    let metronome = BufReader::new(File::open("assets/metronome.wav").unwrap());
+///    let metronome = File::open("assets/metronome.wav").unwrap();
 ///    let metronome_decoder_source = Decoder::new(metronome).unwrap();
 ///
 ///    // Construct a SampleCounter and a Scheduler using it.
 ///    let sample_counter = Arc::new(SampleCounter::new());
-///    let mut scheduler = Scheduler::<_, _, f32>::with_sample_counter(
+///    let mut scheduler = Scheduler::with_sample_counter(
 ///        metronome_decoder_source,
 ///        sample_counter.clone(),
 ///        48000,
@@ -130,7 +125,7 @@ use rodio::cpal::FromSample;
 ///    );
 ///
 ///    // Load another sound to be scheduled.
-///    let note_hit = BufReader::new(File::open("assets/note_hit.wav").unwrap());
+///    let note_hit = File::open("assets/note_hit.wav").unwrap();
 ///    let note_hit_decoder_source = Decoder::new(note_hit).unwrap();
 ///
 ///    // Add the sound to the scheduler, with a list of playback events to schedule.
@@ -145,7 +140,7 @@ use rodio::cpal::FromSample;
 ///    scheduler.get_scheduler(note_hit_id).unwrap().schedule_event(event);
 ///
 ///    // Play the scheduled sounds.
-///    let _ = stream_handle.play_raw(scheduler.convert_samples());
+///    let _ = stream.mixer().add(scheduler);
 ///
 ///    // Read the current sample count.
 ///    let current_samples = sample_counter.get();
@@ -272,14 +267,11 @@ pub struct PlaybackEvent {
 /// # Type Parameters
 ///
 /// * `I`: The type of the input audio source.
-/// * `D`: The sample type used for processing and output, after conversion from `I::Item`.
-pub struct SingleSourceScheduler<I, D> 
+pub struct SingleSourceScheduler<I> 
 where
     I: Source,
-    I::Item: Sample,
-    D: FromSample<I::Item> + Sample + SimdOps,
 {
-    source: Vec<D>,
+    source: Vec<I::Item>,
     channels: u16,
     sample_rate: u32,
     playback_schedule: Vec<u64>,
@@ -290,11 +282,9 @@ where
     _original_source: std::marker::PhantomData<I>,
 }
 
-impl<I, D> SingleSourceScheduler<I, D>
+impl<I> SingleSourceScheduler<I>
 where
     I: Source,
-    I::Item: Sample,
-    D: FromSample<I::Item> + Sample + SimdOps,
 {
     /// Creates a new `SingleSourceScheduler`.
     ///
@@ -304,7 +294,7 @@ where
     /// * `sample_rate`: The sample rate of the output audio.
     /// * `channels`: The number of channels in the output audio.
     #[inline]
-    pub fn new(source: I, sample_rate: u32, channels: u16) -> SingleSourceScheduler<I, D> {
+    pub fn new(source: I, sample_rate: u32, channels: u16) -> SingleSourceScheduler<I> {
         SingleSourceScheduler {
             source: UniformSourceIterator::new(source, channels, sample_rate).collect(),
             channels: channels,
@@ -327,17 +317,15 @@ where
     }
 }
 
-impl<I, D> Iterator for SingleSourceScheduler<I, D>
+impl<I> Iterator for SingleSourceScheduler<I>
 where
     I: Source,
-    I::Item: Sample,
-    D: FromSample<I::Item> + Sample + SimdOps,
 {
-    type Item = D;
+    type Item = Sample;
 
     #[inline]
     #[cfg_attr(feature = "profiler", instrument(name = "SingleSourceScheduler::next"))]
-    fn next(&mut self) -> Option<D> {
+    fn next(&mut self) -> Option<Sample> {
         // Cache the sample index for this sample
         let s = self.samples_counted;
 
@@ -373,14 +361,12 @@ where
     }
 }
 
-impl<I, D> Source for SingleSourceScheduler<I, D>
+impl<I> Source for SingleSourceScheduler<I>
 where
     I: Source,
-    I::Item: Sample,
-    D: FromSample<I::Item> + Sample + SimdOps,
 {
     #[inline]
-    fn current_frame_len(&self) -> Option<usize> {
+    fn current_span_len(&self) -> Option<usize> {
         None
     }
 
@@ -422,30 +408,28 @@ where
 ///
 /// * `I1`: The type of the input audio source.
 /// * `I2`: The type of the scheduled audio sources.
-/// * `D`: The sample type used for processing and output.
 ///
 /// # Example
 ///
 /// ```no_run
 /// use std::fs::File;
-/// use std::io::BufReader;
 ///
-/// use rodio::{Source, Decoder, OutputStream};
+/// use rodio::{Decoder, Source, OutputStreamBuilder};
 /// use rodio_scheduler::{Scheduler, PlaybackEvent};
 ///
 /// fn main() {
 ///    // Get an output stream handle to the default physical sound device.
-///    let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+///    let stream = OutputStreamBuilder::open_default_stream().unwrap();
 ///
 ///    // Load a sound from a file.
-///    let metronome = BufReader::new(File::open("assets/metronome.wav").unwrap());
+///    let metronome = File::open("assets/metronome.wav").unwrap();
 ///    let metronome_decoder_source = Decoder::new(metronome).unwrap();
 ///
 ///    // Create a scheduler.
-///    let mut scheduler = Scheduler::<_, _, f32>::new(metronome_decoder_source, 48000, 2);
+///    let mut scheduler = Scheduler::new(metronome_decoder_source, 48000, 2);
 ///
 ///    // Load another sound to be scheduled.
-///    let note_hit = BufReader::new(File::open("assets/note_hit.wav").unwrap());
+///    let note_hit = File::open("assets/note_hit.wav").unwrap();
 ///    let note_hit_decoder_source = Decoder::new(note_hit).unwrap();
 ///
 ///    // Add the sound to the scheduler, with a list of playback events to schedule.
@@ -463,7 +447,7 @@ where
 ///    let sample_counter = scheduler.get_sample_counter();
 ///
 ///    // Play the scheduled sounds.
-///    let _ = stream_handle.play_raw(scheduler.convert_samples());
+///    let _ = stream.mixer().add(scheduler);
 ///
 ///    // Get the current sample index while playing
 ///    let _current_samples = sample_counter.get();
@@ -474,18 +458,15 @@ where
 ///    std::thread::sleep(std::time::Duration::from_secs(5));
 ///}
 /// ```
-pub struct Scheduler<I1, I2, D> 
+pub struct Scheduler<I1, I2> 
 where
     I1: Source,
-    I1::Item: Sample,
     I2: Source,
-    I2::Item: Sample,
-    D: FromSample<I1::Item> + FromSample<I2::Item> + Sample + SimdOps,
 {
     /// The main input source that the scheduled sources will be mixed with.
-    input: UniformSourceIterator<I1, D>,
+    input: UniformSourceIterator<I1>,
     /// A vector of `SingleSourceScheduler`s, each managing a single scheduled source.
-    sources: Vec<SingleSourceScheduler<I2, D>>,
+    sources: Vec<SingleSourceScheduler<I2>>,
     /// An atomic counter to track the current sample number.
     /// This is managed by the user and should be shared with the audio thread.
     sample_counter: Arc<SampleCounter>,
@@ -495,13 +476,10 @@ where
     channels_counted: u16,
 }
 
-impl<I1, I2, D> Scheduler<I1, I2, D>
+impl<I1, I2> Scheduler<I1, I2>
 where
     I1: Source,
-    I1::Item: Sample,
     I2: Source,
-    I2::Item: Sample,
-    D: FromSample<I1::Item> + FromSample<I2::Item> + Sample + SimdOps,
 {
     /// Creates a new `Scheduler`.
     ///
@@ -511,7 +489,7 @@ where
     /// * `sample_rate`: The sample rate of the output audio.
     /// * `channels`: The number of channels in the output audio.
     #[inline]
-    pub fn new(input: I1, sample_rate: u32, channels: u16) -> Scheduler<I1, I2, D> {
+    pub fn new(input: I1, sample_rate: u32, channels: u16) -> Scheduler<I1, I2> {
         let sample_counter = Arc::new(SampleCounter::new());
 
         Scheduler {
@@ -532,7 +510,7 @@ where
     /// * `sample_rate`: The sample rate of the output audio.
     /// * `channels`: The number of channels in the output audio.
     #[inline]
-    pub fn with_sample_counter(input: I1, sample_counter: Arc<SampleCounter>, sample_rate: u32, channels: u16) -> Scheduler<I1, I2, D> {
+    pub fn with_sample_counter(input: I1, sample_counter: Arc<SampleCounter>, sample_rate: u32, channels: u16) -> Scheduler<I1, I2> {
         sample_counter.set(0);
 
         Scheduler {
@@ -554,7 +532,7 @@ where
     /// * `channels`: The number of channels in the output audio.
     /// * `capacity`: The initial capacity for the number of scheduled sources.
     #[inline]
-    pub fn with_capacity(input: I1, sample_counter: Arc<SampleCounter>, sample_rate: u32, channels: u16, capacity: usize) -> Scheduler<I1, I2, D> {
+    pub fn with_capacity(input: I1, sample_counter: Arc<SampleCounter>, sample_rate: u32, channels: u16, capacity: usize) -> Scheduler<I1, I2> {
         sample_counter.set(0);
 
         Scheduler {
@@ -573,7 +551,7 @@ where
     #[cfg_attr(feature = "profiler", instrument)]
     pub fn add_source(&mut self, source: I2) -> usize 
     {
-        let source_scheduler: SingleSourceScheduler<I2, D> = SingleSourceScheduler::new(source, self.sample_rate(), self.channels());
+        let source_scheduler: SingleSourceScheduler<I2> = SingleSourceScheduler::new(source, self.sample_rate(), self.channels());
 
         self.sources.push(source_scheduler);
 
@@ -585,7 +563,7 @@ where
     /// This allows you to schedule events for a specific source.
     #[inline]
     #[cfg_attr(feature = "profiler", instrument)]
-    pub fn get_scheduler(&mut self, source_idx: usize) -> Option<&mut SingleSourceScheduler<I2, D>>
+    pub fn get_scheduler(&mut self, source_idx: usize) -> Option<&mut SingleSourceScheduler<I2>>
     {
         self.sources.get_mut(source_idx)
     }
@@ -600,19 +578,16 @@ where
     }
 }
 
-impl<I1, I2, D> Iterator for Scheduler<I1, I2, D>
+impl<I1, I2> Iterator for Scheduler<I1, I2>
 where
     I1: Source,
-    I1::Item: Sample,
     I2: Source,
-    I2::Item: Sample,
-    D: FromSample<I1::Item> + FromSample<I2::Item> + Sample + SimdOps,
 {
-    type Item = D;
+    type Item = Sample;
 
     #[inline]
     #[cfg_attr(feature = "profiler", instrument(name = "Scheduler::next"))]
-    fn next(&mut self) -> Option<D> {
+    fn next(&mut self) -> Option<Sample> {
         let input_sample = self.input.next();
 
         // Set the sample and channel index for the next sample
@@ -625,7 +600,7 @@ where
             self.channels_counted += 1;
         }
 
-        let playing_samples: Vec<D> = self.sources
+        let playing_samples: Vec<Sample> = self.sources
                                             .iter_mut()
                                             .map(|source| source.next())
                                             .filter_map(|sample| sample)
@@ -641,17 +616,14 @@ where
     }
 }
 
-impl<I1, I2, D> Source for Scheduler<I1, I2, D>
+impl<I1, I2> Source for Scheduler<I1, I2>
 where
     I1: Source,
-    I1::Item: Sample,
     I2: Source,
-    I2::Item: Sample,
-    D: FromSample<I1::Item> + FromSample<I2::Item> + Sample + SimdOps,
 {
     #[inline]
-    fn current_frame_len(&self) -> Option<usize> {
-        self.input.current_frame_len()
+    fn current_span_len(&self) -> Option<usize> {
+        self.input.current_span_len()
     }
 
     #[inline]

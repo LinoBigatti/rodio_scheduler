@@ -14,7 +14,7 @@ fn test_single_source_scheduler_basic_playback() {
     let scheduled_time: u64 = sample_rate as u64 / 2; 
 
     let dummy_source = common::DummySource::new(sample_rate, channels, duration_samples, value);
-    let mut scheduler = SingleSourceScheduler::<_, f32>::new(dummy_source, sample_rate, channels);
+    let mut scheduler = SingleSourceScheduler::new(dummy_source, sample_rate, channels);
 
     // Schedule an event to play at 0.5 seconds
     let event = PlaybackEvent {

@@ -56,7 +56,7 @@ impl Iterator for DummySource {
 }
 
 impl Source for DummySource {
-    fn current_frame_len(&self) -> Option<usize> {
+    fn current_span_len(&self) -> Option<usize> {
         Some(self.duration as usize * self.channels as usize)
     }
 

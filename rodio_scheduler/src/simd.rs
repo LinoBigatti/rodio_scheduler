@@ -16,7 +16,10 @@ use std::simd::cmp::SimdPartialEq;
 
 #[cfg(feature="simd")]
 use crate::simd_utils::{SimdIter, SimdIterator, gather_select_or_checked_u64};
+#[cfg(feature="simd")]
 use crate::simd_utils::SimdOps;
+
+use rodio::Sample;
 
 /// Retrieves samples from a source based on a playback schedule.
 ///
@@ -24,8 +27,8 @@ use crate::simd_utils::SimdOps;
 #[inline]
 #[cfg(not(feature = "simd"))]
 #[cfg_attr(feature = "profiler", instrument)]
-pub fn retrieve_samples_scalar<'a, D: rodio::Sample>(source: &'a [D], playback_schedule: &[u64], queue_index: (usize, usize), sample_n: u64) -> Vec<D> {
-    if playback_schedule.len() == 0 {
+pub fn retrieve_samples_scalar<'a>(source: &'a [Sample], playback_schedule: &[u64], queue_index: (usize, usize), sample_n: u64) -> Vec<Sample> {
+    if playback_schedule.len() == 0 || queue_index.0 == queue_index.1 {
         return Vec::new()
     }
 
@@ -33,16 +36,22 @@ pub fn retrieve_samples_scalar<'a, D: rodio::Sample>(source: &'a [D], playback_s
     let mut output = Vec::with_capacity(playback_queue.len());
 
     if playback_queue.len() == 0 {
-        output.push(D::zero_value());
+        output.push(0.0);
 
         return output
     }
 
     for &timestamp in playback_queue {
-        if timestamp > sample_n { continue };
+        if timestamp > sample_n { 
+            output.push(0.0);
+
+            continue;
+        };
 
         let index = (sample_n - timestamp) as usize;
         if index >= source.len() {
+            output.push(0.0);
+
             continue;
         }
 
@@ -60,9 +69,9 @@ pub fn retrieve_samples_scalar<'a, D: rodio::Sample>(source: &'a [D], playback_s
 #[inline]
 #[cfg(not(feature = "simd"))]
 #[cfg_attr(feature = "profiler", instrument)]
-pub fn mix_samples_scalar<D: rodio::Sample>(samples: &[D], input_sample: Option<D>) -> Option<D> {
+pub fn mix_samples_scalar(samples: &[Sample], input_sample: Option<Sample>) -> Option<Sample> {
     samples.into_iter().fold(input_sample, |accumulator, sample| match accumulator {
-        Some(s1) => Some(s1.saturating_add(*sample)),
+        Some(s1) => Some(s1 + sample),
         // If you want to make scheduled playback stop after the input Source ended, return None here
         None => Some(*sample),
     })
@@ -74,8 +83,7 @@ pub fn mix_samples_scalar<D: rodio::Sample>(samples: &[D], input_sample: Option<
 #[inline]
 #[cfg(feature = "simd")]
 #[cfg_attr(feature = "profiler", instrument)]
-pub fn retrieve_samples_simd<'a, D, const N: usize>(source: &'a [D], playback_schedule: &'a [u64], queue_index: (usize, usize), sample_n: u64) -> impl SimdIterator<D, N> + 'a where 
-    D: rodio::Sample + SimdOps,
+pub fn retrieve_samples_simd<'a, const N: usize>(source: &'a [Sample], playback_schedule: &'a [u64], queue_index: (usize, usize), sample_n: u64) -> impl SimdIterator<Sample, N> + 'a where 
     LaneCount<N>: SupportedLaneCount,
 {
     let playback_queue: &'a [u64] = &playback_schedule[queue_index.0..queue_index.1];
@@ -97,7 +105,7 @@ pub fn retrieve_samples_simd<'a, D, const N: usize>(source: &'a [D], playback_sc
         // Safeguard: Dont gather indexes set as out of bounds or that happen after the current sample_n.
         let mask = !data.simd_eq(out_of_bounds) & data.simd_le(simd_sample_n) & load_mask;
 
-        (gather_select_or_checked_u64(source, idxs, mask, Simd::splat(D::zero_value())), Mask::splat(true))
+        (gather_select_or_checked_u64(source, idxs, mask, Simd::splat(0.0)), Mask::splat(true))
     };
 
     simd_iter.map(f)
@@ -109,25 +117,24 @@ pub fn retrieve_samples_simd<'a, D, const N: usize>(source: &'a [D], playback_sc
 #[inline]
 #[cfg(feature = "simd")]
 #[cfg_attr(feature = "profiler", instrument)]
-fn mix_samples_simd<D, const N: usize>(samples: impl SimdIterator<D, N>, input_sample: Option<D>) -> Option<D>
+fn mix_samples_simd<const N: usize>(samples: impl SimdIterator<Sample, N>, input_sample: Option<Sample>) -> Option<Sample>
 where
-    D: SimdOps,
     LaneCount<N>: SupportedLaneCount,
 {
     let res = samples
-        .reduce(|acc: (Simd<D, N>, Mask<_, N>), data: (Simd<D, N>, Mask<_, N>)| {
+        .reduce(|acc: (Simd<Sample, N>, Mask<_, N>), data: (Simd<Sample, N>, Mask<_, N>)| {
             // Select values where the mask is 1 and zeros elsewhere
-            let masked_data = data.1.select(data.0, Simd::splat(D::zero_value()));
+            let masked_data = data.1.select(data.0, Simd::splat(0.0));
 
             // Perform saturating addition
-            let result = D::add(acc.0, masked_data);
+            let result = Sample::add(acc.0, masked_data);
 
             (result, Mask::splat(true))
         })
-        .map(|(data, _mask): (Simd<D, N>, Mask<_, N>)| D::horizontal_add(data));
+        .map(|(data, _mask): (Simd<Sample, N>, Mask<_, N>)| Sample::horizontal_add(data));
 
     match input_sample {
-        Some(s) => Some(s.saturating_add(res.unwrap_or(D::zero_value()))),
+        Some(s) => Some(s + res.unwrap_or(0.0)),
         None => res,
     }
 }
@@ -138,22 +145,20 @@ where
 /// use a scalar fallback.
 #[inline]
 #[cfg_attr(feature = "profiler", instrument)]
-pub fn mix_samples<D>(samples: &[D], input_sample: Option<D>) -> Option<D>
-where
-    D: SimdOps,
+pub fn mix_samples(samples: &[Sample], input_sample: Option<Sample>) -> Option<Sample>
 {
     #[cfg(feature = "simd")]
     {
-        let simd_iter: SimdIter<D, 4> = SimdIter::from_slice_or_zero_value(samples);
+        let simd_iter: SimdIter<Sample, 4> = SimdIter::from_slice_or_default(samples);
 
         // SIMD algorithm
-        mix_samples_simd::<D, 4>(simd_iter, input_sample)
+        mix_samples_simd::<4>(simd_iter, input_sample).map(|s: Sample| s.clamp(-1.0, 1.0))
     }
 
     #[cfg(not(feature = "simd"))]
     {
         // Fallback scalar algorithm
-        mix_samples_scalar(samples, input_sample)
+        mix_samples_scalar(samples, input_sample).map(|s: Sample| s.clamp(-1.0, 1.0))
     }
 }
 
@@ -164,14 +169,12 @@ where
 /// use a scalar fallback.
 #[inline]
 #[cfg_attr(feature = "profiler", instrument)]
-pub fn retrieve_and_mix_samples<'a, D>(source: &'a [D], playback_schedule: &[u64], queue_index: (usize, usize), sample_n: u64) -> Option<D> 
-where
-    D: rodio::Sample + SimdOps,
+pub fn retrieve_and_mix_samples<'a>(source: &'a [Sample], playback_schedule: &[u64], queue_index: (usize, usize), sample_n: u64) -> Option<Sample> 
 {
     #[cfg(feature = "simd")]
     {
         // SIMD algorithm
-        let playing_samples = retrieve_samples_simd::<D, 4>(source, playback_schedule, queue_index, sample_n);
+        let playing_samples = retrieve_samples_simd::<4>(source, playback_schedule, queue_index, sample_n);
 
         // Mix scheduled and input samples
         mix_samples_simd(playing_samples, None)

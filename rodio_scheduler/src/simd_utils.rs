@@ -14,7 +14,7 @@ use std::simd::{Simd, Mask, SimdElement, LaneCount, SupportedLaneCount};
 use std::simd::cmp::SimdPartialOrd;
 
 #[cfg(feature="simd")]
-use std::simd::num::{SimdFloat, SimdInt, SimdUint};
+use std::simd::num::{SimdFloat, SimdUint};
 
 /// Gathers elements from a source slice into a SIMD vector, with a fallback for out-of-bounds indices.
 ///
@@ -92,17 +92,6 @@ where
             i: 0,
         }
     }
-
-    /// Creates a new `SimdIter` from a slice, with the zero value of the sample type as the fallback.
-    #[inline]
-    #[allow(dead_code)]
-    pub fn from_slice_or_zero_value(src: &'a [T]) -> SimdIter<'a, T, N> where T: rodio::Sample {
-        Self {
-            src: src,
-            or: Simd::splat(T::zero_value()),
-            i: 0,
-        }
-    }
 }
 
 #[cfg(feature="simd")]
@@ -164,76 +153,32 @@ where
 ///
 /// When the `simd` feature is not enabled, this is a dummy trait.
 #[cfg(not(feature = "simd"))]
-pub trait SimdOps: Sized + rodio::Sample {}
+pub trait SimdOps: Sized {}
 
 #[cfg(not(feature = "simd"))]
 impl<T> SimdOps for T
 where
-    T: Sized + rodio::Sample
+    T: Sized 
 {}
 
 /// A trait for types that support SIMD operations.
 ///
-/// When the `simd` feature is enabled, this trait provides methods for SIMD addition
-/// and horizontal addition for different sample types.
+/// When the `simd` feature is enabled, this trait provides methods for SIMD addition,
+/// horizontal addition, and clamping for different sample types.
 #[cfg(feature = "simd")]
-pub trait SimdOps: Sized + SimdElement + rodio::Sample {
+pub trait SimdOps: Sized + SimdElement {
     /// Adds two SIMD vectors.
     fn add<const N: usize>(a: Simd<Self, N>, b: Simd<Self, N>) -> Simd<Self, N>
     where
         LaneCount<N>: SupportedLaneCount;
+
     /// Horizontally adds the elements of a SIMD vector.
     fn horizontal_add<const N: usize>(a: Simd<Self, N>) -> Self
     where
         LaneCount<N>: SupportedLaneCount;
 }
 
-#[cfg(feature = "simd")]
-impl SimdOps for i16
-{
-    #[inline]
-    fn add<const N: usize>(a: Simd<i16, N>, b: Simd<i16, N>) -> Simd<i16, N>
-    where
-        LaneCount<N>: SupportedLaneCount,
-    {
-        a.saturating_add(b)
-    }
-    #[inline]
-    fn horizontal_add<const N: usize>(a: Simd<i16, N>) -> i16
-    where
-        LaneCount<N>: SupportedLaneCount,
-    {
-        let mut sum: i16 = 0;
-        for i in 0..N {
-            sum = sum.saturating_add(a[i]);
-        }
-        sum
-    }
-}
-
-#[cfg(feature = "simd")]
-impl SimdOps for u16
-{
-    #[inline]
-    fn add<const N: usize>(a: Simd<u16, N>, b: Simd<u16, N>) -> Simd<u16, N>
-    where
-        LaneCount<N>: SupportedLaneCount,
-    {
-        a.saturating_add(b)
-    }
-    #[inline]
-    fn horizontal_add<const N: usize>(a: Simd<u16, N>) -> u16
-    where
-        LaneCount<N>: SupportedLaneCount,
-    {
-        let mut sum: u16 = 0;
-        for i in 0..N {
-            sum = sum.saturating_add(a[i]);
-        }
-        sum
-    }
-}
-
+// rodio::Sample is f32 since rodio 0.21.0, so we only need to implement Simd Operations for floats.
 #[cfg(feature = "simd")]
 impl SimdOps for f32
 {
@@ -244,6 +189,7 @@ impl SimdOps for f32
     {
         a + b
     }
+
     #[inline]
     fn horizontal_add<const N: usize>(a: Simd<f32, N>) -> f32
     where

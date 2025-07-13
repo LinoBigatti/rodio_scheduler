@@ -34,60 +34,60 @@ fn test_sample_counter_increment() {
 
 #[test]
 fn test_mix_samples_some_input() {
-    let samples = vec![10i16, 20, 30];
-    let input_sample = Some(5i16);
+    let samples = vec![0.1f32, 0.2, 0.3];
+    let input_sample = Some(-0.05f32);
 
     let result = simd::mix_samples(&samples, input_sample);
 
-    assert_eq!(result, Some(65i16));
+    assert_eq!(result, Some(0.55f32));
 }
 
 #[test]
 fn test_mix_samples_none_input() {
-    let samples = vec![10i16, 20, 30];
+    let samples = vec![0.1f32, 0.2, 0.3];
     let input_sample = None;
 
     let result = simd::mix_samples(&samples, input_sample);
 
-    assert_eq!(result, Some(60i16));
+    assert_eq!(result, Some(0.6f32));
 }
 
 #[test]
 fn test_mix_empty_samples() {
-    let samples: Vec<i16> = vec![];
-    let input_sample = Some(5i16);
+    let samples: Vec<f32> = vec![];
+    let input_sample = Some(0.5f32);
 
     let result = simd::mix_samples(&samples, input_sample);
 
-    assert_eq!(result, Some(5i16));
+    assert_eq!(result, Some(0.5f32));
 }
 
 #[test]
-fn test_mix_samples_saturating_add() {
-    let samples = vec![i16::MAX, 1];
-    let input_sample = Some(1i16);
+fn test_mix_samples_clamping() {
+    let samples = vec![1.0f32, 1.0, 23.0];
+    let input_sample = Some(1.0f32);
 
     let result = simd::mix_samples(&samples, input_sample);
 
-    assert_eq!(result, Some(i16::MAX));
+    assert_eq!(result, Some(1.0f32));
 }
 
 #[test]
 fn test_retrieve_and_mix_samples_basic() {
-    let source = vec![10i16, 20, 30, 40, 50];
+    let source = vec![0.1f32, 0.2, 0.3, 0.4, 0.5];
     let playback_schedule = vec![0, 2, 4];
     let queue_index = (0, 3);
     let sample_n = 4;
 
     let result = simd::retrieve_and_mix_samples(&source, &playback_schedule, queue_index, sample_n);
 
-    // The samples should be [50, 30, 10]
-    assert_eq!(result, Some(90i16));
+    // The samples should be [0.5, 0.3, 0.1]
+    assert_eq!(result, Some(0.5f32 + 0.3 + 0.1));
 }
 
 #[test]
 fn test_retrieve_and_mix_samples_none_playing() {
-    let source = vec![10i16, 20, 30, 40, 50];
+    let source = vec![1.0f32, 0.1, 0.2, -4.0, 0.0];
     let playback_schedule = vec![10, 12, 14];
 
     // NOTE: This test contains a situation that shouldn't happen
@@ -98,12 +98,12 @@ fn test_retrieve_and_mix_samples_none_playing() {
     let sample_n = 4;
 
     let result = simd::retrieve_and_mix_samples(&source, &playback_schedule, queue_index, sample_n);
-    assert_eq!(result, Some(0i16));
+    assert_eq!(result, Some(0.0f32));
 }
 
 #[test]
 fn test_retrieve_and_mix_samples_empty_schedule() {
-    let source = vec![10i16, 20, 30, 40, 50];
+    let source = vec![1.0f32, 0.0, -3.0, 0.2, 0.5];
     let playback_schedule = vec![];
     let queue_index = (0, 0);
     let sample_n = 4;
@@ -117,7 +117,7 @@ fn test_retrieve_and_mix_samples_empty_schedule() {
 
 #[test]
 fn test_retrieve_and_mix_samples_scalar_out_of_bounds() {
-    let source = vec![10i16, 20, 30];
+    let source = vec![0.0f32, 0.1, 0.2];
     let playback_schedule = vec![0, 5, 10];
 
     // NOTE: This test contains a situation that shouldn't happen
@@ -129,7 +129,7 @@ fn test_retrieve_and_mix_samples_scalar_out_of_bounds() {
 
     let result = simd::retrieve_and_mix_samples(&source, &playback_schedule, queue_index, sample_n);
     
-    assert_eq!(result, Some(0i16));
+    assert_eq!(result, Some(0.0f32));
 }
 
 #[cfg(feature = "simd")]
@@ -139,16 +139,16 @@ mod simd_tests {
 
     #[test]
     fn test_simd_iter_exact() {
-        let data = vec![1i16, 2, 3, 4, 5, 6, 7, 8];
-        let or = Simd::splat(0i16);
-        let mut iter = SimdIter::<'_, i16, 4>::from_slice_or(&data, or);
+        let data = vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+        let or = Simd::splat(0.0f32);
+        let mut iter = SimdIter::<'_, f32, 4>::from_slice_or(&data, or);
 
         let (vec1, mask1) = iter.next().unwrap();
-        assert_eq!(vec1, Simd::from_array([1, 2, 3, 4]));
+        assert_eq!(vec1, Simd::from_array([1.0, 2.0, 3.0, 4.0]));
         assert_eq!(mask1, Mask::splat(true));
 
         let (vec2, mask2) = iter.next().unwrap();
-        assert_eq!(vec2, Simd::from_array([5, 6, 7, 8]));
+        assert_eq!(vec2, Simd::from_array([5.0, 6.0, 7.0, 8.0]));
         assert_eq!(mask2, Mask::splat(true));
 
         assert!(iter.next().is_none());
@@ -156,16 +156,16 @@ mod simd_tests {
 
     #[test]
     fn test_simd_iter_tail() {
-        let data = vec![1i16, 2, 3, 4, 5];
-        let or = Simd::splat(0i16);
-        let mut iter = SimdIter::<'_, i16, 4>::from_slice_or(&data, or);
+        let data = vec![1.0f32, 2.0, 3.0, 4.0, 5.0];
+        let or = Simd::splat(0.0f32);
+        let mut iter = SimdIter::<'_, f32, 4>::from_slice_or(&data, or);
 
         let (vec1, mask1) = iter.next().unwrap();
-        assert_eq!(vec1, Simd::from_array([1, 2, 3, 4]));
+        assert_eq!(vec1, Simd::from_array([1.0, 2.0, 3.0, 4.0]));
         assert_eq!(mask1, Mask::splat(true));
 
         let (vec2, mask2) = iter.next().unwrap();
-        assert_eq!(vec2, Simd::from_array([5, 0, 0, 0]));
+        assert_eq!(vec2, Simd::from_array([5.0, 0.0, 0.0, 0.0]));
         assert_eq!(mask2, Mask::from_array([true, false, false, false]));
 
         assert!(iter.next().is_none());
@@ -173,60 +173,26 @@ mod simd_tests {
 
     #[test]
     fn test_gather_select_or_checked_u64() {
-        let source = vec![10i16, 20, 30, 40, 50];
-        let or = Simd::splat(0i16);
+        let source = vec![10.0f32, 20.0, 30.0, 40.0, 50.0];
+        let or = Simd::splat(0.0f32);
 
         // 1. All valid indices
         let idxs1 = Simd::from_array([0u64, 1, 2, 3]);
         let mask1 = Mask::splat(true);
         let result1 = gather_select_or_checked_u64(&source, idxs1, mask1, or);
-        assert_eq!(result1, Simd::from_array([10, 20, 30, 40]));
+        assert_eq!(result1, Simd::from_array([10.0, 20.0, 30.0, 40.0]));
 
         // 2. Some disabled lanes
         let idxs2 = Simd::from_array([0u64, 10, 2, 3]); // 10 is out of bounds. 3 is just disabled
         let mask2 = Mask::from_array([true, false, true, false]); // disable out of bounds lanes
         let result2 = gather_select_or_checked_u64(&source, idxs2, mask2, or);
-        assert_eq!(result2, Simd::from_array([10, 0, 30, 0]));
+        assert_eq!(result2, Simd::from_array([10.0, 0.0, 30.0, 0.0]));
 
         // 3. Test with u64::MAX indices, should be filtered by safe_cast_mask
         let idxs3 = Simd::from_array([0u64, 1, u64::MAX, 3]);
         let mask3 = Mask::splat(true);
         let result3 = gather_select_or_checked_u64(&source, idxs3, mask3, or);
-        assert_eq!(result3, Simd::from_array([10, 20, 0, 40]));
-    }
-
-    #[test]
-    fn test_simd_ops_i16() {
-        let a = Simd::from_array([10i16, i16::MAX, -10, i16::MIN]);
-        let b = Simd::from_array([20i16, 1, -5, -1]);
-
-        let add_result = i16::add(a, b);
-        assert_eq!(add_result, Simd::from_array([30, i16::MAX, -15, i16::MIN]));
-
-        let mut sum: i16 = 0;
-        sum = sum.saturating_add(10i16);
-        sum = sum.saturating_add(i16::MAX);
-        sum = sum.saturating_add(-10i16);
-        sum = sum.saturating_add(i16::MIN);
-        let horizontal_add_result = i16::horizontal_add(a);
-        assert_eq!(horizontal_add_result, sum);
-    }
-
-    #[test]
-    fn test_simd_ops_u16() {
-        let a = Simd::from_array([10u16, u16::MAX, 0, <u16 as rodio::Sample>::zero_value()]);
-        let b = Simd::from_array([20u16, 1, 20, 1]);
-
-        let add_result = u16::add(a, b);
-        assert_eq!(add_result, Simd::from_array([30, u16::MAX, 20, <u16 as rodio::Sample>::zero_value() + 1]));
-
-        let mut sum: u16 = 0;
-        sum = sum.saturating_add(10u16);
-        sum = sum.saturating_add(u16::MAX);
-        sum = sum.saturating_add(0u16);
-        sum = sum.saturating_add(<u16 as rodio::Sample>::zero_value());
-        let horizontal_add_result = u16::horizontal_add(a);
-        assert_eq!(horizontal_add_result, sum);
+        assert_eq!(result3, Simd::from_array([10.0, 20.0, 0.0, 40.0]));
     }
 
     #[test]

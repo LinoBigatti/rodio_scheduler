@@ -23,24 +23,23 @@ Here is an example of how to use the library to schedule a sound and keep track 
 
 ```rust
 use std::fs::File;
-use std::io::BufReader;
 
-use rodio::{Source, Decoder, OutputStream};
+use rodio::{Source, Decoder, OutputStreamBuilder};
 use rodio_scheduler::{Scheduler, PlaybackEvent};
 
 fn main() {
    // Get an output stream handle to the default physical sound device.
-   let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+   let stream = OutputStreamBuilder::open_default_stream().unwrap();
 
    // Load a sound from a file.
-   let metronome = BufReader::new(File::open("assets/metronome.wav").unwrap());
+   let metronome = File::open("assets/metronome.wav").unwrap();
    let metronome_decoder_source = Decoder::new(metronome).unwrap();
 
    // Create a scheduler.
    let mut scheduler = Scheduler::new(metronome_decoder_source, 48000, 2);
 
    // Load another sound to be scheduled.
-   let note_hit = BufReader::new(File::open("assets/note_hit.wav").unwrap());
+   let note_hit = File::open("assets/note_hit.wav").unwrap();
    let note_hit_decoder_source = Decoder::new(note_hit).unwrap();
 
    // Add the sound to the scheduler, with a list of playback events to schedule.
@@ -58,7 +57,7 @@ fn main() {
    let sample_counter = scheduler.get_sample_counter();
 
    // Play the scheduled sounds.
-   let _ = stream_handle.play_raw(scheduler);
+   let _ = stream.mixer().add(scheduler);
 
    // Get the current sample index while playing
    let _current_samples = sample_counter.get();
