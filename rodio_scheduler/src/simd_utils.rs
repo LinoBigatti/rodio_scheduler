@@ -84,8 +84,8 @@ where
     #[allow(dead_code)]
     pub fn from_slice_or(src: &'a [T], or: Simd<T, N>) -> SimdIter<'a, T, N> {
         Self {
-            src: src,
-            or: or,
+            src,
+            or,
             i: 0,
         }
     }
@@ -98,7 +98,7 @@ where
         T: Default,
     {
         Self {
-            src: src,
+            src,
             or: Simd::splat(T::default()),
             i: 0,
         }

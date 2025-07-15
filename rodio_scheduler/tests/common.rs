@@ -70,7 +70,7 @@ impl Source for DummySource {
 
     fn total_duration(&self) -> Option<Duration> {
         Some(Duration::from_secs(
-            self.duration as u64 / self.sample_rate as u64,
+            self.duration / self.sample_rate as u64,
         ))
     }
 }

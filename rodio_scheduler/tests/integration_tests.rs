@@ -7,7 +7,7 @@ use rodio_scheduler::{PlaybackEvent, SampleCounter, SingleSourceScheduler};
 
 #[test]
 fn test_single_source_scheduler_basic_playback() {
-    let sample_rate = 48000 as u32;
+    let sample_rate = 48000_u32;
     let channels = 2;
     let duration_samples = 2 * sample_rate as u64;
     let value = 0.5f32;
@@ -47,8 +47,7 @@ fn test_single_source_scheduler_basic_playback() {
                     mask.push(true);
                 } else {
                     println!(
-                        "The scheduled sample was not present at sample {} (expected {}, found {}).",
-                        s, value, sample
+                        "The scheduled sample was not present at sample {s} (expected {value}, found {sample})."
                     );
                     mask.push(false);
                 }
@@ -68,16 +67,13 @@ fn test_single_source_scheduler_basic_playback() {
                     mask.push(false);
                 }
             }
+        } else if s < scheduled_time || s >= scheduled_end_time {
+            mask.push(true);
         } else {
-            if s < scheduled_time || s >= scheduled_end_time {
-                mask.push(true);
-            } else {
-                println!(
-                    "The source sample was not present at sample {} (expected Scheduler to return Some(_) within samples {} to {}, found None).",
-                    s, scheduled_time, scheduled_end_time
-                );
-                mask.push(false);
-            }
+            println!(
+                "The source sample was not present at sample {s} (expected Scheduler to return Some(_) within samples {scheduled_time} to {scheduled_end_time}, found None)."
+            );
+            mask.push(false);
         }
     }
 
@@ -85,14 +81,12 @@ fn test_single_source_scheduler_basic_playback() {
     assert!(
         mask.into_iter()
             .reduce(|acc: bool, b: bool| acc & b)
-            .unwrap_or_else(|| false),
+            .unwrap_or(false),
         "Scheduled sound was not detected"
     );
     assert!(
-        samples_played == expected_sample_count as u64,
-        "An incorrect number of samples was played (Expected {}, found {}).",
-        expected_sample_count,
-        samples_played
+        samples_played == expected_sample_count,
+        "An incorrect number of samples was played (Expected {expected_sample_count}, found {samples_played})."
     );
 }
 
@@ -147,8 +141,7 @@ fn test_sample_counter_throughput_multithreaded() {
         .filter(|&x| !_seen_values.contains(&(x as u64)))
         .map(|x| {
             eprintln!(
-                "Counter was expected to produce value {:?}, but it was missing.",
-                x
+                "Counter was expected to produce value {x:?}, but it was missing."
             )
         })
         .collect();

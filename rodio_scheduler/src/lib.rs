@@ -156,6 +156,12 @@ pub struct SampleCounter {
     inner: AtomicU64,
 }
 
+impl Default for SampleCounter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SampleCounter {
     /// Creates a new `SampleCounter` initialized to `0`.
     ///
@@ -297,8 +303,8 @@ where
     pub fn new(source: I, sample_rate: u32, channels: u16) -> SingleSourceScheduler<I> {
         SingleSourceScheduler {
             source: UniformSourceIterator::new(source, channels, sample_rate).collect(),
-            channels: channels,
-            sample_rate: sample_rate,
+            channels,
+            sample_rate,
             playback_schedule: Vec::with_capacity(1000),
             playback_position: (0, 0),
             samples_counted: 0,
@@ -334,7 +340,7 @@ where
         self.samples_counted += 1;
 
         // Update the playback position
-        if self.playback_schedule.len() != 0 {
+        if !self.playback_schedule.is_empty() {
             let source_size: u64 = self.source.len() as u64 - 1;
             let schedule_size: usize = self.playback_schedule.len() - 1;
 
@@ -367,7 +373,7 @@ where
     fn size_hint(&self) -> (usize, Option<usize>) {
         let last_element: usize = self.playback_schedule[self.playback_schedule.len() - 1]
             .try_into()
-            .unwrap_or_else(|_| usize::MAX);
+            .unwrap_or(usize::MAX);
         let lower_bound = last_element + self.source.len();
 
         (lower_bound, None)
@@ -508,7 +514,7 @@ where
         Scheduler {
             input: UniformSourceIterator::new(input, channels, sample_rate),
             sources: Vec::new(),
-            sample_counter: sample_counter,
+            sample_counter,
             samples_counted: 0,
             channels_counted: 0,
         }
@@ -534,7 +540,7 @@ where
         Scheduler {
             input: UniformSourceIterator::new(input, channels, sample_rate),
             sources: Vec::new(),
-            sample_counter: sample_counter,
+            sample_counter,
             samples_counted: 0,
             channels_counted: 0,
         }
@@ -562,7 +568,7 @@ where
         Scheduler {
             input: UniformSourceIterator::new(input, channels, sample_rate),
             sources: Vec::with_capacity(capacity),
-            sample_counter: sample_counter,
+            sample_counter,
             samples_counted: 0,
             channels_counted: 0,
         }
@@ -625,8 +631,7 @@ where
         let playing_samples: Vec<Sample> = self
             .sources
             .iter_mut()
-            .map(|source| source.next())
-            .filter_map(|sample| sample)
+            .filter_map(|source| source.next())
             .collect();
 
         // Mix scheduled and input samples

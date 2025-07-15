@@ -188,8 +188,8 @@ pub fn mix_samples(samples: &[Sample], input_sample: Option<Sample>) -> Option<S
 /// use a scalar fallback.
 #[inline]
 #[cfg_attr(feature = "profiler", instrument)]
-pub fn retrieve_and_mix_samples<'a>(
-    source: &'a [Sample],
+pub fn retrieve_and_mix_samples(
+    source: &[Sample],
     playback_schedule: &[u64],
     queue_index: (usize, usize),
     sample_n: u64,
