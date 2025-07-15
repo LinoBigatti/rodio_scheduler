@@ -31,7 +31,7 @@
 //! use rodio::{Decoder, Source, OutputStreamBuilder};
 //! use rodio_scheduler::{Scheduler, PlaybackEvent};
 //!
-//! fn main() {
+//! # fn main() {
 //!     // Get an output stream handle to the default physical sound device.
 //!     let stream = OutputStreamBuilder::open_default_stream().unwrap();
 //!
@@ -69,7 +69,7 @@
 //!     // The sound plays in a separate audio thread, so we need to keep the main
 //!     // thread alive while it's playing.
 //!     std::thread::sleep(Duration::from_secs(5));
-//! }
+//! # }
 //! ```
 
 // rodio_scheduler requires nightly rust, because portable-simd is not stabilized yet.
@@ -107,7 +107,7 @@ use rodio::source::{SeekError, Source, UniformSourceIterator};
 /// use rodio::{Decoder, Source, OutputStreamBuilder};
 /// use rodio_scheduler::{Scheduler, PlaybackEvent, SampleCounter};
 ///
-/// fn main() {
+/// # fn main() {
 ///    // Get an output stream handle to the default physical sound device.
 ///    let stream = OutputStreamBuilder::open_default_stream().unwrap();
 ///
@@ -149,7 +149,7 @@ use rodio::source::{SeekError, Source, UniformSourceIterator};
 ///    // The sound plays in a separate audio thread,
 ///    // so we need to keep the main thread alive while it's playing.
 ///    std::thread::sleep(Duration::from_secs(5));
-///}
+/// # }
 /// ```
 #[repr(align(64))] // Cache line alignment to prevent false sharing issues
 pub struct SampleCounter {
@@ -436,7 +436,7 @@ where
 /// use rodio::{Decoder, Source, OutputStreamBuilder};
 /// use rodio_scheduler::{Scheduler, PlaybackEvent};
 ///
-/// fn main() {
+/// # fn main() {
 ///    // Get an output stream handle to the default physical sound device.
 ///    let stream = OutputStreamBuilder::open_default_stream().unwrap();
 ///
@@ -475,7 +475,7 @@ where
 ///    // The sound plays in a separate audio thread,
 ///    // so we need to keep the main thread alive while it's playing.
 ///    std::thread::sleep(std::time::Duration::from_secs(5));
-///}
+/// # }
 /// ```
 pub struct Scheduler<I1, I2>
 where
