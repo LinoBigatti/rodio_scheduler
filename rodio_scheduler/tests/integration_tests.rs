@@ -3,7 +3,7 @@ mod common;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use rodio_scheduler::{SingleSourceScheduler, PlaybackEvent, SampleCounter};
+use rodio_scheduler::{PlaybackEvent, SampleCounter, SingleSourceScheduler};
 
 #[test]
 fn test_single_source_scheduler_basic_playback() {
@@ -11,7 +11,7 @@ fn test_single_source_scheduler_basic_playback() {
     let channels = 2;
     let duration_samples = 2 * sample_rate as u64;
     let value = 0.5f32;
-    let scheduled_time: u64 = sample_rate as u64 / 2; 
+    let scheduled_time: u64 = sample_rate as u64 / 2;
 
     let dummy_source = common::DummySource::new(sample_rate, channels, duration_samples, value);
     let mut scheduler = SingleSourceScheduler::new(dummy_source, sample_rate, channels);
@@ -46,7 +46,10 @@ fn test_single_source_scheduler_basic_playback() {
                 if sample == value {
                     mask.push(true);
                 } else {
-                    println!("The scheduled sample was not present at sample {} (expected {}, found {}).", s, value, sample);
+                    println!(
+                        "The scheduled sample was not present at sample {} (expected {}, found {}).",
+                        s, value, sample
+                    );
                     mask.push(false);
                 }
 
@@ -58,7 +61,10 @@ fn test_single_source_scheduler_basic_playback() {
                 if sample == 0.0 {
                     mask.push(true);
                 } else {
-                    println!("The source sample was incorrect at sample {} (expected {}, found {}).", s, 0.0, sample);
+                    println!(
+                        "The source sample was incorrect at sample {} (expected {}, found {}).",
+                        s, 0.0, sample
+                    );
                     mask.push(false);
                 }
             }
@@ -66,15 +72,28 @@ fn test_single_source_scheduler_basic_playback() {
             if s < scheduled_time || s >= scheduled_end_time {
                 mask.push(true);
             } else {
-                println!("The source sample was not present at sample {} (expected Scheduler to return Some(_) within samples {} to {}, found None).", s, scheduled_time, scheduled_end_time);
+                println!(
+                    "The source sample was not present at sample {} (expected Scheduler to return Some(_) within samples {} to {}, found None).",
+                    s, scheduled_time, scheduled_end_time
+                );
                 mask.push(false);
             }
         }
     }
 
     let expected_sample_count = duration_samples * channels as u64;
-    assert!(mask.into_iter().reduce(|acc: bool, b: bool| acc & b).unwrap_or_else(|| false), "Scheduled sound was not detected");
-    assert!(samples_played == expected_sample_count as u64, "An incorrect number of samples was played (Expected {}, found {}).", expected_sample_count, samples_played);
+    assert!(
+        mask.into_iter()
+            .reduce(|acc: bool, b: bool| acc & b)
+            .unwrap_or_else(|| false),
+        "Scheduled sound was not detected"
+    );
+    assert!(
+        samples_played == expected_sample_count as u64,
+        "An incorrect number of samples was played (Expected {}, found {}).",
+        expected_sample_count,
+        samples_played
+    );
 }
 
 #[test]
@@ -93,11 +112,11 @@ fn test_sample_counter_throughput_multithreaded() {
 
         let mut _seen_values = seen_values_clone.lock().unwrap();
         _seen_values.push(s);
-        
+
         while !exit_flag_clone.load(std::sync::atomic::Ordering::SeqCst) {
             s = counter_clone_1.get();
 
-            if let Some(&prev_s) = _seen_values.last() { 
+            if let Some(&prev_s) = _seen_values.last() {
                 if prev_s != s {
                     _seen_values.push(s);
                 }
@@ -115,7 +134,6 @@ fn test_sample_counter_throughput_multithreaded() {
         }
     });
 
-
     producer_handle.join().unwrap();
     exit_flag.store(true, std::sync::atomic::Ordering::SeqCst);
     reader_handle.join().unwrap();
@@ -125,12 +143,21 @@ fn test_sample_counter_throughput_multithreaded() {
     let count = _seen_values.len();
     let is_sorted = _seen_values.is_sorted();
 
-    let _: Vec<_>= (0..len)
+    let _: Vec<_> = (0..len)
         .filter(|&x| !_seen_values.contains(&(x as u64)))
-        .map(|x| eprintln!("Counter was expected to produce value {:?}, but it was missing.", x))
+        .map(|x| {
+            eprintln!(
+                "Counter was expected to produce value {:?}, but it was missing.",
+                x
+            )
+        })
         .collect();
 
     assert!(is_sorted, "The counter returned unordered values.");
-    assert_eq!(counter.get(), len as u64, "The counter didn't finish on the correct count.");
+    assert_eq!(
+        counter.get(),
+        len as u64,
+        "The counter didn't finish on the correct count."
+    );
     assert_eq!(count, len + 1, "Some counter values were not observed.");
 }

@@ -40,11 +40,11 @@ impl Iterator for DummySource {
         }
 
         if s == 0 {
-            return Some(self.value)
+            return Some(self.value);
         }
 
         if s < self.duration {
-            return Some(0.0)
+            return Some(0.0);
         }
 
         None
@@ -69,6 +69,8 @@ impl Source for DummySource {
     }
 
     fn total_duration(&self) -> Option<Duration> {
-        Some(Duration::from_secs(self.duration as u64 / self.sample_rate as u64))
+        Some(Duration::from_secs(
+            self.duration as u64 / self.sample_rate as u64,
+        ))
     }
 }

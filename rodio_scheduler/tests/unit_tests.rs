@@ -128,13 +128,13 @@ fn test_retrieve_and_mix_samples_scalar_out_of_bounds() {
     let sample_n = 4;
 
     let result = simd::retrieve_and_mix_samples(&source, &playback_schedule, queue_index, sample_n);
-    
+
     assert_eq!(result, Some(0.0f32));
 }
 
 #[cfg(feature = "simd")]
 mod simd_tests {
-    use rodio_scheduler::simd_utils::{gather_select_or_checked_u64, SimdIter, SimdOps};
+    use rodio_scheduler::simd_utils::{SimdIter, SimdOps, gather_select_or_checked_u64};
     use std::simd::{Mask, Simd};
 
     #[test]

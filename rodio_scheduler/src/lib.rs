@@ -75,7 +75,7 @@
 // rodio_scheduler requires nightly rust, because portable-simd is not stabilized yet.
 #![feature(portable_simd)]
 
-#[cfg(feature="profiler")]
+#[cfg(feature = "profiler")]
 use time_graph::instrument;
 
 pub mod simd;
@@ -84,10 +84,10 @@ pub mod simd_utils;
 use std::time::Duration;
 
 use std::sync::Arc;
-use std::sync::atomic::{fence, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering, fence};
 
-use rodio::source::{Source, UniformSourceIterator, SeekError};
 use rodio::Sample;
+use rodio::source::{SeekError, Source, UniformSourceIterator};
 
 /// A high-speed, high-performance sample counter designed for thread-safe
 /// tracking of audio samples.
@@ -267,7 +267,7 @@ pub struct PlaybackEvent {
 /// # Type Parameters
 ///
 /// * `I`: The type of the input audio source.
-pub struct SingleSourceScheduler<I> 
+pub struct SingleSourceScheduler<I>
 where
     I: Source,
 {
@@ -312,7 +312,8 @@ where
     /// The schedule is then sorted to ensure correct playback order.
     #[inline]
     pub fn schedule_event(&mut self, event: PlaybackEvent) {
-        self.playback_schedule.push(event.timestamp * self.channels as u64);
+        self.playback_schedule
+            .push(event.timestamp * self.channels as u64);
         self.playback_schedule.sort();
     }
 }
@@ -336,25 +337,37 @@ where
         if self.playback_schedule.len() != 0 {
             let source_size: u64 = self.source.len() as u64 - 1;
             let schedule_size: usize = self.playback_schedule.len() - 1;
-            
-            while self.playback_position.0 < schedule_size &&
-                  (self.playback_schedule[self.playback_position.0] + source_size) < s {
+
+            while self.playback_position.0 < schedule_size
+                && (self.playback_schedule[self.playback_position.0] + source_size) < s
+            {
                 self.playback_position.0 += 1
             }
 
-            while self.playback_position.1 <= schedule_size &&
-                  self.playback_schedule[self.playback_position.1] <= s {
+            while self.playback_position.1 <= schedule_size
+                && self.playback_schedule[self.playback_position.1] <= s
+            {
                 self.playback_position.1 += 1
             }
         }
 
-        simd::retrieve_and_mix_samples(&self.source, &self.playback_schedule, self.playback_position, s)
+        simd::retrieve_and_mix_samples(
+            &self.source,
+            &self.playback_schedule,
+            self.playback_position,
+            s,
+        )
     }
 
     #[inline]
-    #[cfg_attr(feature = "profiler", instrument(name = "SingleSourceScheduler::size_hint"))]
+    #[cfg_attr(
+        feature = "profiler",
+        instrument(name = "SingleSourceScheduler::size_hint")
+    )]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let last_element: usize = self.playback_schedule[self.playback_schedule.len() - 1].try_into().unwrap_or_else(|_| usize::MAX);
+        let last_element: usize = self.playback_schedule[self.playback_schedule.len() - 1]
+            .try_into()
+            .unwrap_or_else(|_| usize::MAX);
         let lower_bound = last_element + self.source.len();
 
         (lower_bound, None)
@@ -393,7 +406,7 @@ where
         let samples_nanos = pos.subsec_nanos() / nanos_per_sample;
 
         self.samples_counted = (samples_secs + samples_nanos as u64) * self.channels as u64;
-        
+
         Ok(())
     }
 }
@@ -458,7 +471,7 @@ where
 ///    std::thread::sleep(std::time::Duration::from_secs(5));
 ///}
 /// ```
-pub struct Scheduler<I1, I2> 
+pub struct Scheduler<I1, I2>
 where
     I1: Source,
     I2: Source,
@@ -510,7 +523,12 @@ where
     /// * `sample_rate`: The sample rate of the output audio.
     /// * `channels`: The number of channels in the output audio.
     #[inline]
-    pub fn with_sample_counter(input: I1, sample_counter: Arc<SampleCounter>, sample_rate: u32, channels: u16) -> Scheduler<I1, I2> {
+    pub fn with_sample_counter(
+        input: I1,
+        sample_counter: Arc<SampleCounter>,
+        sample_rate: u32,
+        channels: u16,
+    ) -> Scheduler<I1, I2> {
         sample_counter.set(0);
 
         Scheduler {
@@ -532,7 +550,13 @@ where
     /// * `channels`: The number of channels in the output audio.
     /// * `capacity`: The initial capacity for the number of scheduled sources.
     #[inline]
-    pub fn with_capacity(input: I1, sample_counter: Arc<SampleCounter>, sample_rate: u32, channels: u16, capacity: usize) -> Scheduler<I1, I2> {
+    pub fn with_capacity(
+        input: I1,
+        sample_counter: Arc<SampleCounter>,
+        sample_rate: u32,
+        channels: u16,
+        capacity: usize,
+    ) -> Scheduler<I1, I2> {
         sample_counter.set(0);
 
         Scheduler {
@@ -549,9 +573,9 @@ where
     /// Returns a `usize` identifier for the new source, which can be used to schedule playback events.
     #[inline]
     #[cfg_attr(feature = "profiler", instrument)]
-    pub fn add_source(&mut self, source: I2) -> usize 
-    {
-        let source_scheduler: SingleSourceScheduler<I2> = SingleSourceScheduler::new(source, self.sample_rate(), self.channels());
+    pub fn add_source(&mut self, source: I2) -> usize {
+        let source_scheduler: SingleSourceScheduler<I2> =
+            SingleSourceScheduler::new(source, self.sample_rate(), self.channels());
 
         self.sources.push(source_scheduler);
 
@@ -563,8 +587,7 @@ where
     /// This allows you to schedule events for a specific source.
     #[inline]
     #[cfg_attr(feature = "profiler", instrument)]
-    pub fn get_scheduler(&mut self, source_idx: usize) -> Option<&mut SingleSourceScheduler<I2>>
-    {
+    pub fn get_scheduler(&mut self, source_idx: usize) -> Option<&mut SingleSourceScheduler<I2>> {
         self.sources.get_mut(source_idx)
     }
 
@@ -572,8 +595,7 @@ where
     ///
     /// This allows you to synchronize external events with the audio playback.
     #[inline]
-    pub fn get_sample_counter(&self) -> Arc<SampleCounter>
-    {
+    pub fn get_sample_counter(&self) -> Arc<SampleCounter> {
         self.sample_counter.clone()
     }
 }
@@ -600,11 +622,12 @@ where
             self.channels_counted += 1;
         }
 
-        let playing_samples: Vec<Sample> = self.sources
-                                            .iter_mut()
-                                            .map(|source| source.next())
-                                            .filter_map(|sample| sample)
-                                            .collect();
+        let playing_samples: Vec<Sample> = self
+            .sources
+            .iter_mut()
+            .map(|source| source.next())
+            .filter_map(|sample| sample)
+            .collect();
 
         // Mix scheduled and input samples
         simd::mix_samples(playing_samples.as_slice(), input_sample)
