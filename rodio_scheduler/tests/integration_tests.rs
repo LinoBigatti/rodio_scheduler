@@ -139,11 +139,7 @@ fn test_sample_counter_throughput_multithreaded() {
 
     let _: Vec<_> = (0..len)
         .filter(|&x| !_seen_values.contains(&(x as u64)))
-        .map(|x| {
-            eprintln!(
-                "Counter was expected to produce value {x:?}, but it was missing."
-            )
-        })
+        .map(|x| eprintln!("Counter was expected to produce value {x:?}, but it was missing."))
         .collect();
 
     assert!(is_sorted, "The counter returned unordered values.");

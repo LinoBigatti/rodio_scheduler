@@ -83,11 +83,7 @@ where
     #[inline]
     #[allow(dead_code)]
     pub fn from_slice_or(src: &'a [T], or: Simd<T, N>) -> SimdIter<'a, T, N> {
-        Self {
-            src,
-            or,
-            i: 0,
-        }
+        Self { src, or, i: 0 }
     }
 
     /// Creates a new `SimdIter` from a slice, with a default value as the fallback.
