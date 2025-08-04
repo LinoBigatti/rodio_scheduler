@@ -70,6 +70,8 @@ use rodio_scheduler::{Scheduler, PlaybackEvent};
 // rodio_scheduler requires nightly rust, because portable-simd is not stabilized yet.
 #![feature(portable_simd)]
 
+use rtsan_standalone::nonblocking;
+
 #[cfg(feature = "profiler")]
 use time_graph::instrument;
 
@@ -78,175 +80,8 @@ pub mod simd_utils;
 
 use std::time::Duration;
 
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering, fence};
-
 use rodio::Sample;
 use rodio::source::{SeekError, Source, UniformSourceIterator};
-
-/// A high-speed, high-performance sample counter designed for thread-safe
-/// tracking of audio samples.
-///
-/// This struct uses an `AtomicU64` internally to provide atomic operations,
-/// ensuring that the sample count can be safely accessed and modified
-/// across multiple threads, such as the audio processing thread and the
-/// main application thread.
-///
-/// # Examples
-///
-/// ```no_run
-/// use std::fs::File;
-/// use std::sync::Arc;
-/// use std::time::Duration;
-///
-/// use rodio::{Decoder, Source, OutputStreamBuilder};
-/// use rodio_scheduler::{Scheduler, PlaybackEvent, SampleCounter};
-///
-/// # fn main() {
-///    // Get an output stream handle to the default physical sound device.
-///    let stream = OutputStreamBuilder::open_default_stream().unwrap();
-///
-///    // Load a sound from a file.
-///    let metronome = File::open("assets/metronome.wav").unwrap();
-///    let metronome_decoder_source = Decoder::new(metronome).unwrap();
-///
-///    // Construct a SampleCounter and a Scheduler using it.
-///    let sample_counter = Arc::new(SampleCounter::new());
-///    let mut scheduler = Scheduler::with_sample_counter(
-///        metronome_decoder_source,
-///        sample_counter.clone(),
-///        48000,
-///        2,
-///    );
-///
-///    // Load another sound to be scheduled.
-///    let note_hit = File::open("assets/note_hit.wav").unwrap();
-///    let note_hit_decoder_source = Decoder::new(note_hit).unwrap();
-///
-///    // Add the sound to the scheduler, with a list of playback events to schedule.
-///    let note_hit_id = scheduler.add_source(note_hit_decoder_source);
-///
-///    // Schedule the sound to be played at a specific timestamp.
-///    let event = PlaybackEvent {
-///        source_id: note_hit_id,
-///        timestamp: scheduler.sample_rate() as u64 * 2, // 2 seconds in
-///        repeat: None,
-///    };
-///    scheduler.get_scheduler(note_hit_id).unwrap().schedule_event(event);
-///
-///    // Play the scheduled sounds.
-///    let _ = stream.mixer().add(scheduler);
-///
-///    // Read the current sample count.
-///    let current_samples = sample_counter.get();
-///    println!("Current samples after starting playback: {}", current_samples);
-///
-///    // The sound plays in a separate audio thread,
-///    // so we need to keep the main thread alive while it's playing.
-///    std::thread::sleep(Duration::from_secs(5));
-/// # }
-/// ```
-#[repr(align(64))] // Cache line alignment to prevent false sharing issues
-pub struct SampleCounter {
-    inner: AtomicU64,
-}
-
-impl Default for SampleCounter {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl SampleCounter {
-    /// Creates a new `SampleCounter` initialized to `0`.
-    ///
-    /// This operation does not involve any atomic memory orderings as it's
-    /// a simple initialization.
-    pub fn new() -> SampleCounter {
-        SampleCounter {
-            inner: AtomicU64::new(0),
-        }
-    }
-
-    /// Retrieves the current sample count.
-    ///
-    /// # Memory Ordering
-    ///
-    /// - A `SeqCst` (Sequentially Consistent) fence is used before the load.
-    ///   This ensures that all memory operations preceding this fence are
-    ///   globally ordered with respect to other `SeqCst` operations. It acts
-    ///   as a strong memory barrier, making sure that any writes performed
-    ///   before this fence by other threads (that used `Release` or `SeqCst`
-    ///   ordering) are visible.
-    /// - The inner `load` operation itself is `Relaxed`,
-    ///   meaning it has no ordering constraints with other memory operations
-    ///   beyond its own atomicity. The `SeqCst` fence provides the necessary
-    ///   synchronization.
-    ///
-    /// This combination ensures that the loaded value is up-to-date with
-    /// respect to prior writes from other threads that used appropriate
-    /// `Release` or `SeqCst` orderings.
-    #[inline]
-    pub fn get(&self) -> u64 {
-        fence(Ordering::SeqCst);
-
-        self.inner.load(Ordering::Relaxed)
-    }
-
-    /// Sets the sample counter to a new `value`.
-    ///
-    /// # Memory Ordering
-    ///
-    /// - An `Acquire` fence is used before the store. This ensures that all
-    ///   memory operations *after* this fence happen after all memory
-    ///   operations *before* this fence. It also synchronizes with `Release`
-    ///   operations from other threads.
-    /// - The inner `store` operation is `Relaxed`,
-    ///   providing atomicity but no inherent ordering guarantees.
-    /// - A `Release` fence is used after the store. This ensures that all
-    ///   memory operations *before* this fence happen before all memory
-    ///   operations *after* this fence. It also synchronizes with `Acquire`
-    ///   operations from other threads.
-    ///
-    /// The combination of `Acquire` and `Release` fences around a `Relaxed`
-    /// store effectively creates a full memory barrier, ensuring that all
-    /// memory operations preceding this `set` call are visible to threads
-    /// performing `Acquire` operations, and all memory operations following
-    /// this `set` call are visible to threads performing `Release` operations.
-    #[inline]
-    pub fn set(&self, value: u64) {
-        fence(Ordering::Acquire);
-
-        self.inner.store(value, Ordering::Relaxed);
-
-        fence(Ordering::Release);
-    }
-
-    /// Increments the sample counter by 1.
-    ///
-    /// # Memory Ordering
-    ///
-    /// - An `Acquire` fence is used before the `fetch_add`. Similar to `set`,
-    ///   this ensures ordering with subsequent operations and synchronizes
-    ///   with `Release` operations.
-    /// - The inner `fetch_add` operation is an atomic
-    ///   read-modify-write. It is `Relaxed`, meaning it's atomic but doesn't
-    ///   provide ordering guarantees with other memory operations on its own.
-    /// - A `Release` fence is used after the `fetch_add`. Similar to `set`,
-    ///   this ensures ordering with preceding operations and synchronizes
-    ///   with `Acquire` operations.
-    ///
-    /// The fences around the `fetch_add` operation provide a full memory
-    /// barrier, ensuring visibility and ordering similar to the `set` method.
-    #[inline]
-    pub fn increment(&self) {
-        fence(Ordering::Acquire);
-
-        self.inner.fetch_add(1, Ordering::Relaxed);
-
-        fence(Ordering::Release);
-    }
-}
 
 /// Represents a playback event to be scheduled.
 pub struct PlaybackEvent {
@@ -277,7 +112,7 @@ where
     sample_rate: u32,
     playback_schedule: Vec<u64>,
     playback_position: (usize, usize),
-    // In this case we only keep track of samples counted, since the underlying source will be
+    // We only keep track of samples counted, since the underlying source will be
     // from an UniformSourceIterator.
     samples_counted: u64,
     _original_source: std::marker::PhantomData<I>,
@@ -326,6 +161,7 @@ where
     type Item = Sample;
 
     #[inline]
+    #[nonblocking]
     #[cfg_attr(feature = "profiler", instrument(name = "SingleSourceScheduler::next"))]
     fn next(&mut self) -> Option<Sample> {
         // Cache the sample index for this sample
@@ -457,15 +293,8 @@ where
 ///    };
 ///    scheduler.get_scheduler(note_hit_id).unwrap().schedule_event(event);
 ///
-///    // Get the sample counter before moving the scheduler to the audio thread
-///    let sample_counter = scheduler.get_sample_counter();
-///
 ///    // Play the scheduled sounds.
 ///    let _ = stream.mixer().add(scheduler);
-///
-///    // Get the current sample index while playing
-///    let _current_samples = sample_counter.get();
-///    //do_something(current_samples);
 ///
 ///    // The sound plays in a separate audio thread,
 ///    // so we need to keep the main thread alive while it's playing.
@@ -481,13 +310,6 @@ where
     input: UniformSourceIterator<I1>,
     /// A vector of `SingleSourceScheduler`s, each managing a single scheduled source.
     sources: Vec<SingleSourceScheduler<I2>>,
-    /// An atomic counter to track the current sample number.
-    /// This is managed by the user and should be shared with the audio thread.
-    sample_counter: Arc<SampleCounter>,
-    /// The number of samples that have been processed.
-    samples_counted: u64,
-    /// The number of channels that have been processed for the current sample.
-    channels_counted: u16,
 }
 
 impl<I1, I2> Scheduler<I1, I2>
@@ -504,40 +326,9 @@ where
     /// * `channels`: The number of channels in the output audio.
     #[inline]
     pub fn new(input: I1, sample_rate: u32, channels: u16) -> Scheduler<I1, I2> {
-        let sample_counter = Arc::new(SampleCounter::new());
-
         Scheduler {
             input: UniformSourceIterator::new(input, channels, sample_rate),
             sources: Vec::new(),
-            sample_counter,
-            samples_counted: 0,
-            channels_counted: 0,
-        }
-    }
-
-    /// Creates a new `Scheduler`, with a given sample counter.
-    ///
-    /// # Arguments
-    ///
-    /// * `input`: The main audio source.
-    /// * `sample_counter`: An `Arc<SampleCounter>` to keep track of the playback position.
-    /// * `sample_rate`: The sample rate of the output audio.
-    /// * `channels`: The number of channels in the output audio.
-    #[inline]
-    pub fn with_sample_counter(
-        input: I1,
-        sample_counter: Arc<SampleCounter>,
-        sample_rate: u32,
-        channels: u16,
-    ) -> Scheduler<I1, I2> {
-        sample_counter.set(0);
-
-        Scheduler {
-            input: UniformSourceIterator::new(input, channels, sample_rate),
-            sources: Vec::new(),
-            sample_counter,
-            samples_counted: 0,
-            channels_counted: 0,
         }
     }
 
@@ -546,26 +337,19 @@ where
     /// # Arguments
     ///
     /// * `input`: The main audio source.
-    /// * `sample_counter`: An `Arc<SampleCounter>` to keep track of the playback position.
     /// * `sample_rate`: The sample rate of the output audio.
     /// * `channels`: The number of channels in the output audio.
     /// * `capacity`: The initial capacity for the number of scheduled sources.
     #[inline]
     pub fn with_capacity(
         input: I1,
-        sample_counter: Arc<SampleCounter>,
         sample_rate: u32,
         channels: u16,
         capacity: usize,
     ) -> Scheduler<I1, I2> {
-        sample_counter.set(0);
-
         Scheduler {
             input: UniformSourceIterator::new(input, channels, sample_rate),
             sources: Vec::with_capacity(capacity),
-            sample_counter,
-            samples_counted: 0,
-            channels_counted: 0,
         }
     }
 
@@ -591,14 +375,6 @@ where
     pub fn get_scheduler(&mut self, source_idx: usize) -> Option<&mut SingleSourceScheduler<I2>> {
         self.sources.get_mut(source_idx)
     }
-
-    /// Retrieves a reference to the internal high-resolution sample counter.
-    ///
-    /// This allows you to synchronize external events with the audio playback.
-    #[inline]
-    pub fn get_sample_counter(&self) -> Arc<SampleCounter> {
-        self.sample_counter.clone()
-    }
 }
 
 impl<I1, I2> Iterator for Scheduler<I1, I2>
@@ -609,19 +385,10 @@ where
     type Item = Sample;
 
     #[inline]
+    #[nonblocking]
     #[cfg_attr(feature = "profiler", instrument(name = "Scheduler::next"))]
     fn next(&mut self) -> Option<Sample> {
         let input_sample = self.input.next();
-
-        // Set the sample and channel index for the next sample
-        if self.channels_counted == self.channels() {
-            self.samples_counted += 1;
-            self.channels_counted = 0;
-
-            self.sample_counter.increment();
-        } else {
-            self.channels_counted += 1;
-        }
 
         let playing_samples: Vec<Sample> = self
             .sources

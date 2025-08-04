@@ -1,36 +1,7 @@
 // rodio_scheduler requires nightly rust, because portable-simd is not stabilized yet.
 #![feature(portable_simd)]
 
-use rodio_scheduler::SampleCounter;
 use rodio_scheduler::simd;
-
-#[test]
-fn test_sample_counter_new() {
-    let counter = SampleCounter::new();
-
-    assert_eq!(counter.get(), 0);
-}
-
-#[test]
-fn test_sample_counter_set() {
-    let counter = SampleCounter::new();
-
-    counter.set(100);
-
-    assert_eq!(counter.get(), 100);
-}
-
-#[test]
-fn test_sample_counter_increment() {
-    let counter = SampleCounter::new();
-
-    counter.increment();
-    assert_eq!(counter.get(), 1);
-
-    counter.set(99);
-    counter.increment();
-    assert_eq!(counter.get(), 100);
-}
 
 #[test]
 fn test_mix_samples_some_input() {

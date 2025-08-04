@@ -19,7 +19,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-rodio_scheduler = "0.2.0"
+rodio_scheduler = "0.3.0"
 ```
 
 Here is an example of how to use the library to schedule a sound and keep track of the sample counter. For more information, see the [Docs](https://docs.rs/rodio_scheduler).

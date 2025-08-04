@@ -1,9 +1,6 @@
 mod common;
 
-use std::sync::{Arc, Mutex};
-use std::thread;
-
-use rodio_scheduler::{PlaybackEvent, SampleCounter, SingleSourceScheduler};
+use rodio_scheduler::{PlaybackEvent, SingleSourceScheduler};
 
 #[test]
 fn test_single_source_scheduler_basic_playback() {
@@ -35,8 +32,6 @@ fn test_single_source_scheduler_basic_playback() {
         // Get the sample index
         let _i = i as u64;
         let s = _i / channels as u64;
-        //println!("sample i: {}", s);
-        //if s == 2 {break}
 
         if let Some(sample) = scheduler.next() {
             samples_played += 1;
@@ -88,65 +83,4 @@ fn test_single_source_scheduler_basic_playback() {
         samples_played == expected_sample_count,
         "An incorrect number of samples was played (Expected {expected_sample_count}, found {samples_played})."
     );
-}
-
-#[test]
-fn test_sample_counter_throughput_multithreaded() {
-    let len: usize = 1000;
-
-    let counter = Arc::new(SampleCounter::new());
-    let seen_values = Arc::new(Mutex::new(Vec::with_capacity(1000)));
-    let exit_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
-
-    let counter_clone_1 = counter.clone();
-    let seen_values_clone = seen_values.clone();
-    let exit_flag_clone = exit_flag.clone();
-    let reader_handle = thread::spawn(move || {
-        let mut s = counter_clone_1.get();
-
-        let mut _seen_values = seen_values_clone.lock().unwrap();
-        _seen_values.push(s);
-
-        while !exit_flag_clone.load(std::sync::atomic::Ordering::SeqCst) {
-            s = counter_clone_1.get();
-
-            if let Some(&prev_s) = _seen_values.last() {
-                if prev_s != s {
-                    _seen_values.push(s);
-                }
-            };
-        }
-    });
-
-    let counter_clone_2 = Arc::clone(&counter);
-    let producer_handle = thread::spawn(move || {
-        for _ in 0..len {
-            // Add a small delay to simulate the sample rate.
-            std::thread::sleep(std::time::Duration::from_nanos(1_000_000 / 48000));
-
-            counter_clone_2.increment();
-        }
-    });
-
-    producer_handle.join().unwrap();
-    exit_flag.store(true, std::sync::atomic::Ordering::SeqCst);
-    reader_handle.join().unwrap();
-
-    let _seen_values = seen_values.lock().unwrap();
-
-    let count = _seen_values.len();
-    let is_sorted = _seen_values.is_sorted();
-
-    let _: Vec<_> = (0..len)
-        .filter(|&x| !_seen_values.contains(&(x as u64)))
-        .map(|x| eprintln!("Counter was expected to produce value {x:?}, but it was missing."))
-        .collect();
-
-    assert!(is_sorted, "The counter returned unordered values.");
-    assert_eq!(
-        counter.get(),
-        len as u64,
-        "The counter didn't finish on the correct count."
-    );
-    assert_eq!(count, len + 1, "Some counter values were not observed.");
 }

@@ -1,6 +1,6 @@
 [package]
 name = "rodio_scheduler"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 description = "A library for sample-perfect audio scheduling with rodio."
 license = "MIT"
@@ -10,9 +10,10 @@ keywords = ["rodio", "audio", "scheduler", "scheduling"]
 categories = ["multimedia::audio", "game-development"]
 
 [dependencies]
-rodio = "0.21.0"
+rodio = "0.21.1"
 time-graph = { version = "0.3.2", features = ["table"], optional = true }
 multiversion = { version = "0.8.0", optional = true }
+rtsan-standalone = "0.2.0"
 
 [features]
 default = ["simd"]
