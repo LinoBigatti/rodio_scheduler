@@ -5,6 +5,7 @@ edition = "2024"
 description = "A library for sample-perfect audio scheduling with rodio."
 license = "MIT"
 repository = "https://github.com/LinoBigatti/coop-editor/tree/master/rodio_scheduler"
+documentation = "https://docs.rs/rodio_scheduler" 
 readme = "README.md"
 keywords = ["rodio", "audio", "scheduler", "scheduling"]
 categories = ["multimedia::audio", "game-development"]
