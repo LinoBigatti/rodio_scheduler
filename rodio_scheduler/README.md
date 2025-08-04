@@ -1,10 +1,13 @@
-# Rodio Scheduler
+# rodio_scheduler: Sample-perfect scheduling for Rodio Sources.
 
 [![Crates.io](https://img.shields.io/crates/v/rodio_scheduler.svg)](https://crates.io/crates/rodio_scheduler)
 [![Docs.rs](https://docs.rs/rodio_scheduler/badge.svg)](https://docs.rs/rodio_scheduler)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A library for sample-perfect audio scheduling with rodio. 
+A crate that provides a [rodio](https://github.com/RustAudio/rodio) source capable of sample-pefect scheduling of other sources.
+
+This is useful for applications that need to schedule multiple audio playback events before starting playback, 
+such as Rhythm Games or DAWs. For synchronizing visuals or other external events, see the [rodio_playback_position](https://crates.io/crates/rodio_playback_position) crate.
 
 ## Important
 
@@ -53,15 +56,8 @@ fn main() {
    };
    scheduler.get_scheduler(note_hit_id).unwrap().schedule_event(event);
 
-   // Get the sample counter before moving the scheduler to the audio thread
-   let sample_counter = scheduler.get_sample_counter();
-
    // Play the scheduled sounds.
    let _ = stream.mixer().add(scheduler);
-
-   // Get the current sample index while playing
-   let _current_samples = sample_counter.get();
-   //do_something(current_samples);
 
    // The sound plays in a separate audio thread,
    // so we need to keep the main thread alive while it's playing.

@@ -1,76 +1,71 @@
-//! A library for scheduling audio playback with `rodio`.
-//!
-//! `rodio_scheduler` provides a `rodio` `Source` that can schedule other sources to be played
-//! at specific timestamps. This is useful for applications that require precise audio
-//! scheduling, such as rhythm games, digital audio workstations (DAWs), or music players.
-//!
-//! ## Important
-//!
-//! This crate requires the nightly Rust compiler because it uses the `portable-simd` feature,
-//! which has not yet been stabilized.
-//!
-//! ## Features
-//!
-//! - **Sample-perfect Scheduling**: Schedule audio playback with sample-level accuracy.
-//! - **Atomic Sample Counter**: Provides a thread-safe sample counter to synchronize
-//!   external events with audio playback.
-//! - **SIMD Acceleration**: Uses SIMD for mixing audio samples, providing a small
-//!   performance boost. This can be enabled with the `simd` feature flag.
-//! - **Optional Profiling**: Includes an optional `profiler` feature to instrument the code
-//!   and analyze its performance using `time-graph`. Beware that this has a big performance
-//!   penalty.
-//!
-//! ## Example
-//!
-//! The following example shows how to schedule a sound to be played after 2 seconds.
-//!
-//! ```no_run
-//! use std::fs::File;
-//! use std::time::Duration;
-//!
-//! use rodio::{Decoder, Source, OutputStreamBuilder};
-//! use rodio_scheduler::{Scheduler, PlaybackEvent};
-//!
-//! # fn main() {
-//!     // Get an output stream handle to the default physical sound device.
-//!     let stream = OutputStreamBuilder::open_default_stream().unwrap();
-//!
-//!     // A source to play as the background audio.
-//!     let background = rodio::source::SineWave::new(440.0);
-//!
-//!     // Create a scheduler.
-//!     let mut scheduler = Scheduler::new(background, 48000, 2);
-//!
-//!     // Load a sound to be scheduled.
-//!     let file = File::open("assets/note_hit.wav").unwrap();
-//!     let note_hit = Decoder::new(file).unwrap();
-//!
-//!     // Add the sound to the scheduler.
-//!     let note_hit_id = scheduler.add_source(note_hit);
-//!
-//!     // Schedule the sound to be played at 2 seconds.
-//!     let event = PlaybackEvent {
-//!         source_id: note_hit_id,
-//!         timestamp: 48000 * 2, // 2 seconds in samples
-//!         repeat: None,
-//!     };
-//!     scheduler.get_scheduler(note_hit_id).unwrap().schedule_event(event);
-//!
-//!     // Get the sample counter before moving the scheduler to the audio thread
-//!     let sample_counter = scheduler.get_sample_counter();
-//!
-//!     // Play the scheduled sounds.
-//!     let _ = stream.mixer().add(scheduler);
-//!
-//!     // Get the current sample index while playing
-//!     let _current_samples = sample_counter.get();
-//!     //do_something(current_samples);
-//!
-//!     // The sound plays in a separate audio thread, so we need to keep the main
-//!     // thread alive while it's playing.
-//!     std::thread::sleep(Duration::from_secs(5));
-//! # }
-//! ```
+/*!
+A library for scheduling audio playback with `rodio`.
+
+`rodio_scheduler` provides a [rodio](https://crates.io/crates/rodio) `Source` that can schedule other sources to be played
+at specific timestamps. This is useful for applications that need to accurately schedule a
+source to be played along other sources, such as rhythm games, digital audio workstations
+(DAWs), or music players. For synchronizing visuals or other external events with the audio
+playback, see the [rodio_playback_position](https://crates.io/crates/rodio_playback_position) crate.
+
+## Important
+
+This crate requires the nightly Rust compiler because it uses the `portable-simd` feature,
+which has not yet been stabilized.
+
+## Features
+
+- **Sample-perfect Scheduling**: Schedule audio playback with sample-level accuracy.
+- **SIMD Acceleration**: Uses SIMD for mixing audio samples, providing a small
+  performance boost. This can be enabled with the `simd` feature flag.
+- **Optional Profiling**: Includes an optional `profiler` feature to instrument the code
+  and analyze its performance using `time-graph`. Beware that this has a big performance
+  penalty.
+
+## Example
+
+The following example shows how to schedule a sound to be played after 2 seconds.
+
+```no_run
+use std::fs::File;
+use std::time::Duration;
+
+use rodio::{Decoder, Source, OutputStreamBuilder};
+use rodio_scheduler::{Scheduler, PlaybackEvent};
+
+# fn main() {
+    // Get an output stream handle to the default physical sound device.
+    let stream = OutputStreamBuilder::open_default_stream().unwrap();
+
+    // A source to play as the background audio.
+    let background = rodio::source::SineWave::new(440.0);
+
+    // Create a scheduler.
+    let mut scheduler = Scheduler::new(background, 48000, 2);
+
+    // Load a sound to be scheduled.
+    let file = File::open("assets/note_hit.wav").unwrap();
+    let note_hit = Decoder::new(file).unwrap();
+
+    // Add the sound to the scheduler.
+    let note_hit_id = scheduler.add_source(note_hit);
+
+    // Schedule the sound to be played at 2 seconds.
+    let event = PlaybackEvent {
+        source_id: note_hit_id,
+        timestamp: 48000 * 2, // 2 seconds in samples
+        repeat: None,
+    };
+    scheduler.get_scheduler(note_hit_id).unwrap().schedule_event(event);
+
+    // Play the scheduled sounds.
+    let _ = stream.mixer().add(scheduler);
+
+    // The sound plays in a separate audio thread, so we need to keep the main
+    // thread alive while it's playing.
+    std::thread::sleep(Duration::from_secs(5));
+# }
+```
+*/
 
 // rodio_scheduler requires nightly rust, because portable-simd is not stabilized yet.
 #![feature(portable_simd)]
