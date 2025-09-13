@@ -403,14 +403,14 @@ where
     fn next(&mut self) -> Option<Sample> {
         let input_sample = self.input.next();
 
-        let playing_samples: Vec<Sample> = self
+        // NOTE: This could be mixed using the simd::mix_samples method, but it would require us to
+        // get the sample data out of the iterator and into a contiguous slice, and using SIMD operations
+        // would only start being more efficient for applications with > 4 simultaneous schedulers.
+        Some(self
             .sources
             .iter_mut()
             .filter_map(|source| source.next())
-            .collect();
-
-        // Mix scheduled and input samples
-        simd::mix_samples(playing_samples.as_slice(), input_sample)
+            .fold(input_sample.unwrap_or_default(), |accumulator, sample| accumulator + sample))
     }
 
     #[inline]
