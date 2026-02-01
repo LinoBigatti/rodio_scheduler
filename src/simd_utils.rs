@@ -8,7 +8,7 @@
 use time_graph::instrument;
 
 #[cfg(feature = "simd")]
-use std::simd::{LaneCount, Mask, Simd, SimdElement, SupportedLaneCount};
+use std::simd::{Mask, Simd, SimdElement};
 
 #[cfg(feature = "simd")]
 use std::simd::cmp::SimdPartialOrd;
@@ -28,8 +28,7 @@ pub fn gather_select_or_checked_u64<T, const N: usize>(
     or: Simd<T, N>,
 ) -> Simd<T, N>
 where
-    T: SimdOps,
-    LaneCount<N>: SupportedLaneCount,
+    T: SimdOps
 {
     let safe_cast_mask = idxs.simd_le(Simd::splat(usize::MAX as u64));
 
@@ -48,7 +47,6 @@ where
 pub trait SimdIterator<T, const N: usize>: Iterator<Item = (Simd<T, N>, Mask<T::Mask, N>)>
 where
     T: SimdElement,
-    LaneCount<N>: SupportedLaneCount,
 {
 }
 
@@ -57,7 +55,6 @@ impl<I, T, const N: usize> SimdIterator<T, N> for I
 where
     I: Iterator<Item = (Simd<T, N>, Mask<T::Mask, N>)>,
     T: SimdElement,
-    LaneCount<N>: SupportedLaneCount,
 {
 }
 
@@ -66,7 +63,6 @@ where
 pub struct SimdIter<'a, T, const N: usize>
 where
     T: SimdElement,
-    LaneCount<N>: SupportedLaneCount,
 {
     src: &'a [T],
     or: Simd<T, N>,
@@ -77,7 +73,6 @@ where
 impl<'a, T, const N: usize> SimdIter<'a, T, N>
 where
     T: SimdElement,
-    LaneCount<N>: SupportedLaneCount,
 {
     /// Creates a new `SimdIter` from a slice and a fallback SIMD vector.
     #[inline]
@@ -105,7 +100,6 @@ where
 impl<T, const N: usize> Iterator for SimdIter<'_, T, N>
 where
     T: SimdElement,
-    LaneCount<N>: SupportedLaneCount,
 {
     type Item = (Simd<T, N>, Mask<T::Mask, N>);
 
@@ -169,32 +163,22 @@ impl<T> SimdOps for T where T: Sized {}
 #[cfg(feature = "simd")]
 pub trait SimdOps: Sized + SimdElement {
     /// Adds two SIMD vectors.
-    fn add<const N: usize>(a: Simd<Self, N>, b: Simd<Self, N>) -> Simd<Self, N>
-    where
-        LaneCount<N>: SupportedLaneCount;
+    fn add<const N: usize>(a: Simd<Self, N>, b: Simd<Self, N>) -> Simd<Self, N>;
 
     /// Horizontally adds the elements of a SIMD vector.
-    fn horizontal_add<const N: usize>(a: Simd<Self, N>) -> Self
-    where
-        LaneCount<N>: SupportedLaneCount;
+    fn horizontal_add<const N: usize>(a: Simd<Self, N>) -> Self;
 }
 
 // rodio::Sample is f32 since rodio 0.21.0, so we only need to implement Simd Operations for floats.
 #[cfg(feature = "simd")]
 impl SimdOps for f32 {
     #[inline]
-    fn add<const N: usize>(a: Simd<f32, N>, b: Simd<f32, N>) -> Simd<f32, N>
-    where
-        LaneCount<N>: SupportedLaneCount,
-    {
+    fn add<const N: usize>(a: Simd<f32, N>, b: Simd<f32, N>) -> Simd<f32, N> {
         a + b
     }
 
     #[inline]
-    fn horizontal_add<const N: usize>(a: Simd<f32, N>) -> f32
-    where
-        LaneCount<N>: SupportedLaneCount,
-    {
+    fn horizontal_add<const N: usize>(a: Simd<f32, N>) -> f32 {
         a.reduce_sum()
     }
 }

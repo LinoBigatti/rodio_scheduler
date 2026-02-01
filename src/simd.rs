@@ -12,7 +12,7 @@ use std::simd::cmp::SimdPartialEq;
 #[cfg(feature = "simd")]
 use std::simd::cmp::SimdPartialOrd;
 #[cfg(feature = "simd")]
-use std::simd::{LaneCount, Mask, Simd, SupportedLaneCount};
+use std::simd::{Mask, Simd, Select};
 
 #[cfg(feature = "simd")]
 use crate::simd_utils::SimdOps;
@@ -95,10 +95,7 @@ pub fn retrieve_samples_simd<'a, const N: usize>(
     playback_schedule: &'a [u64],
     queue_index: (usize, usize),
     sample_n: u64,
-) -> impl SimdIterator<Sample, N> + 'a
-where
-    LaneCount<N>: SupportedLaneCount,
-{
+) -> impl SimdIterator<Sample, N> + 'a {
     let playback_queue: &'a [u64] = &playback_schedule[queue_index.0..queue_index.1];
 
     // Decompose the unaligned slice into a &[u64] prefix, a &[Simd<u64, N>] middle and a &[u64]
@@ -136,10 +133,7 @@ where
 fn mix_samples_simd<const N: usize>(
     samples: impl SimdIterator<Sample, N>,
     input_sample: Option<Sample>,
-) -> Option<Sample>
-where
-    LaneCount<N>: SupportedLaneCount,
-{
+) -> Option<Sample> {
     let res = samples
         .reduce(
             |acc: (Simd<Sample, N>, Mask<_, N>), data: (Simd<Sample, N>, Mask<_, N>)| {

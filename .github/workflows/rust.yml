@@ -28,7 +28,7 @@ jobs:
           profile: minimal
           components: rustfmt, clippy
 
-      - name: Run cargo fmt
+      - name: Run cargo check
         uses: actions-rs/cargo@v1
         with:
           command: check
@@ -58,16 +58,20 @@ jobs:
     - name: Run cargo build (debug)
       uses: actions-rs/cargo@v1
       with:
-        command: build --verbose
+        command: build
+        args: --verbose
     - name: Run cargo test (debug)
       uses: actions-rs/cargo@v1
       with:
-        command: test --verbose
+        command: test 
+        args: --verbose
     - name: Run cargo build (release)
       uses: actions-rs/cargo@v1
       with:
-        command: build --verbose --release
+        command: build 
+        args: --verbose --release
     - name: Run cargo test (release)
       uses: actions-rs/cargo@v1
       with:
-        command: test --verbose --release
+        command: test
+        args: --verbose --release
