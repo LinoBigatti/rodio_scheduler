@@ -1,0 +1,73 @@
+name: rodio_scheduler Tests
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: Checks for rustc nightly
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install alsa libs
+        run: |
+          sudo apt-get update
+          sudo apt-get install libasound2-dev
+      
+      - name: Install latest nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          profile: minimal
+          components: rustfmt, clippy
+
+      - name: Run cargo fmt
+        uses: actions-rs/cargo@v1
+        with:
+          command: check
+  
+  test:
+    name: Tests for rustc nightly on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macOS-latest]
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install alsa libs
+      if: ${{ matrix.os == 'ubuntu-latest' }}
+      run: |
+        sudo apt-get update
+        sudo apt-get install libasound2-dev
+    
+    - name: Install latest nightly
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: nightly
+        profile: minimal
+
+    - name: Run cargo build (debug)
+      uses: actions-rs/cargo@v1
+      with:
+        command: build --verbose
+    - name: Run cargo test (debug)
+      uses: actions-rs/cargo@v1
+      with:
+        command: test --verbose
+    - name: Run cargo build (release)
+      uses: actions-rs/cargo@v1
+      with:
+        command: build --verbose --release
+    - name: Run cargo test (release)
+      uses: actions-rs/cargo@v1
+      with:
+        command: test --verbose --release
